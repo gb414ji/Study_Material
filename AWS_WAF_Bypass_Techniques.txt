@@ -6,8 +6,8 @@
 
   *** SCOPE & ETHICS ***
   The techniques below are documented for AUTHORIZED PENETRATION TESTING
-  and RED TEAM ENGAGEMENTS ONLY[cite: 1]. Only test systems you own or have explicit
-  written permission to test[cite: 1]. Unauthorized testing is illegal[cite: 1].
+  and RED TEAM ENGAGEMENTS ONLY. Only test systems you own or have explicit
+  written permission to test. Unauthorized testing is illegal.
 
 --------------------------------------------------------------------------------
 TABLE OF CONTENTS
@@ -28,8 +28,8 @@ TABLE OF CONTENTS
 ================================================================================
 
 AWS WAF is a request-inspection layer that sits in front of CloudFront, ALB,
-API Gateway, AppSync, and Cognito[cite: 1]. Every request is evaluated BEFORE it
-reaches your application[cite: 1].
+API Gateway, AppSync, and Cognito. Every request is evaluated BEFORE it
+reaches your application.
 
     Client Request
          |
@@ -49,44 +49,44 @@ reaches your application[cite: 1].
   Component            | What it does
   ---------------------+------------------------------------------------
   Web ACL              | Top-level container attached to a protected
-                       | resource[cite: 1]
+                       | resource
   Rules                | Conditions that inspect headers, body, URI,
-                       | query string, cookies[cite: 1]
+                       | query string, cookies
   Rule groups          | Bundles of rules - AWS Managed Rule Groups
                        | (Core, SQLi, Known Bad Inputs, Bot Control)
-                       | are the most common[cite: 1]
+                       | are the most common
   Rate-based rules     | Throttle/block by request rate per IP (or
-                       | aggregation key) over 5-minute windows[cite: 1]
+                       | aggregation key) over 5-minute windows
   Actions              | Allow, Block, Count, CAPTCHA, Challenge - the
                        | FIRST terminating match wins (Count mode just
-                       | logs)[cite: 1]
+                       | logs)
 
-  Requests are evaluated top-to-bottom by priority[cite: 1].
+  Requests are evaluated top-to-bottom by priority.
 
 
 ================================================================================
 2. WHERE THE GAPS COME FROM
 ================================================================================
 
-Almost every WAF bypass traces back to one root cause[cite: 1]:
+Almost every WAF bypass traces back to one root cause:
 
     THE WAF AND THE ORIGIN DON'T PARSE THE REQUEST THE SAME WAY.
 
   Gap                    | Why it happens
   -----------------------+----------------------------------------------
   Inspection size limits | WAF inspects only the first 8KB (or 64KB) of
-                         | a request body by default[cite: 1]. Payloads placed
+                         | a request body by default. Payloads placed
                          | past that boundary are invisible to WAF but
-                         | still parsed by the origin[cite: 1].
+                         | still parsed by the origin.
   Partial field coverage | Not every managed rule group inspects every
-                         | header, cookie, or the full URI by default[cite: 1] -
-                         | coverage varies rule group by rule group[cite: 1].
+                         | header, cookie, or the full URI by default -
+                         | coverage varies rule group by rule group.
   Parser mismatches      | WAF and origin may decode encoding, JSON, or
-                         | multipart bodies differently[cite: 1] - what WAF sees
-                         | as benign, the app parses as executable[cite: 1].
+                         | multipart bodies differently - what WAF sees
+                         | as benign, the app parses as executable.
   Architecture exposure  | WAF is often attached only to the edge
-                         | (CloudFront)[cite: 1]. If the origin is directly
-                         | reachable, WAF is trivially skipped[cite: 1].
+                         | (CloudFront). If the origin is directly
+                         | reachable, WAF is trivially skipped.
 
 
 ================================================================================
@@ -97,20 +97,20 @@ Almost every WAF bypass traces back to one root cause[cite: 1]:
   --------------------------+-------------------------------------------
   1. Fingerprint the WAF    | Identify vendor/config via response
                             | headers, block pages, and tools like
-                            | wafw00f[cite: 1]. Confirm which resource (CDN,
-                            | ALB, API GW) is actually protected[cite: 1].
+                            | wafw00f. Confirm which resource (CDN,
+                            | ALB, API GW) is actually protected.
   2. Map rule coverage      | Send controlled probes per field (header,
                             | cookie, body, URI, query string) and note
-                            | what triggers Block vs. what passes[cite: 1] -
-                            | build a coverage matrix[cite: 1].
+                            | what triggers Block vs. what passes -
+                            | build a coverage matrix.
   3. Hunt for the origin    | crt.sh / Certificate Transparency, DNS
                             | history, Shodan/Censys cert-fingerprint
                             | search for subdomains or IPs that bypass
-                            | the WAF-fronted path entirely[cite: 1].
+                            | the WAF-fronted path entirely.
   4. Baseline in Count mode | In your own test environment, set rules
-                            | to Count to see what WOULD have matched[cite: 1] -
+                            | to Count to see what WOULD have matched -
                             | review WAF/CloudWatch logs to understand
-                            | real detection boundaries[cite: 1].
+                            | real detection boundaries.
 
 
 ================================================================================
@@ -118,30 +118,30 @@ Almost every WAF bypass traces back to one root cause[cite: 1]:
 ================================================================================
 
 Break the signature match without breaking the payload's meaning to the
-backend[cite: 1].
+backend.
 
   - Single & double URL encoding
-        %27 vs %2527 decode differently at WAF vs. origin[cite: 1]
-        * Baseline (Blocked): ' OR '1'='1[cite: 1]
-        * Bypassed (Double Encoded): %2527%2520OR%2520%25271%2527%253D%25271[cite: 1]
+        %27 vs %2527 decode differently at WAF vs. origin
+        * Baseline (Blocked): ' OR '1'='1
+        * Bypassed (Double Encoded): %2527%2520OR%2520%25271%2527%253D%25271
 
   - Case randomization
-        SeLeCt bypasses naive case-sensitive regex rules[cite: 1]
-        * Baseline (Blocked): SELECT * FROM users WHERE id = 1;[cite: 1]
-        * Bypassed (Case Mutated): SeLeCt * FrOm users WhErE id = 1;[cite: 1]
+        SeLeCt bypasses naive case-sensitive regex rules
+        * Baseline (Blocked): SELECT * FROM users WHERE id = 1;
+        * Bypassed (Case Mutated): SeLeCt * FrOm users WhErE id = 1;
 
   - Inline SQL comments
-        /**/ breaks keyword-adjacency signatures without breaking syntax[cite: 1]
-        * Baseline (Blocked): UNION SELECT username, password FROM users[cite: 1]
-        * Bypassed (Comment Injection): UNION/**/SELECT/**/username,/**/password/**/FROM/**/users[cite: 1]
+        /**/ breaks keyword-adjacency signatures without breaking syntax
+        * Baseline (Blocked): UNION SELECT username, password FROM users
+        * Bypassed (Comment Injection): UNION/**/SELECT/**/username,/**/password/**/FROM/**/users
 
   - Unicode / homoglyph substitution
-        fullwidth or lookalike characters evade literal matches[cite: 1]
+        fullwidth or lookalike characters evade literal matches
 
   - Null byte & whitespace tricks
-        alternate whitespace (tabs, %0a) confuses tokenizers[cite: 1]
-        * Baseline (Blocked): SELECT id FROM users WHERE id=1[cite: 1]
-        * Bypassed (Whitespace Swap): SELECT%0aid%0aFROM%0ausers%0aWHERE%0aid=1[cite: 1]
+        alternate whitespace (tabs, %0a) confuses tokenizers
+        * Baseline (Blocked): SELECT id FROM users WHERE id=1
+        * Bypassed (Whitespace Swap): SELECT%0aid%0aFROM%0ausers%0aWHERE%0aid=1
 
 
 ================================================================================
@@ -149,34 +149,34 @@ backend[cite: 1].
 ================================================================================
 
 The WAF's grammar for "SQL" or "HTTP request" is narrower than the
-database's or server's[cite: 1].
+database's or server's.
 
   Technique                        | Description & Concrete Payload Example
   ---------------------------------+--------------------------------------
   JSON-based SQL injection         | Modern databases (MySQL, PostgreSQL,
                                    | MSSQL, SQLite) support JSON functions
-                                   | in SQL[cite: 1]. Most WAF SQLi grammars -
+                                   | in SQL. Most WAF SQLi grammars -
                                    | including AWS's - were never taught
                                    | this syntax, so JSON-wrapped
                                    | injection payloads parse fine at the
                                    | DB but look like harmless data to
-                                   | the WAF[cite: 1].
+                                   | the WAF.
                                    | 
                                    | **Example Payload:**
                                    | POST /api/user/lookup HTTP/1.1
                                    | Content-Type: application/json
                                    | 
                                    | {"username": "admin' UNION SELECT null, version() -- -"}
-  HTTP parameter pollution         | Sending a parameter twice[cite: 1]: WAF may
+  HTTP parameter pollution         | Sending a parameter twice: WAF may
                                    | inspect only the first occurrence
                                    | while the app framework (Node,
                                    | nginx, etc.) uses the last - or vice
-                                   | versa[cite: 1].
+                                   | versa.
                                    | 
                                    | **Example Payload:**
                                    | GET /search?q=safe_term&q=1%27%20OR%20%271%27=%271 HTTP/1.1
   Inspection size limit overflow   | Pushing malicious payloads past the
-                                   | 8KB/64KB body inspection boundary[cite: 1].
+                                   | 8KB/64KB body inspection boundary.
                                    | 
                                    | **Example Payload Structure:**
                                    | POST /submit HTTP/1.1
@@ -187,11 +187,11 @@ database's or server's[cite: 1].
                                    | malformed boundary, or mismatching
                                    | declared vs. actual body format, so
                                    | the WAF's parser fails silently
-                                   | while the app still parses it[cite: 1].
+                                   | while the app still parses it.
   Chunked / smuggling-adjacent     | Transfer-encoding edge cases that
   tricks                           | cause the WAF and origin to disagree
                                    | on where one request ends and the
-                                   | next begins[cite: 1].
+                                   | next begins.
 
 
 ================================================================================
@@ -199,7 +199,7 @@ database's or server's[cite: 1].
 ================================================================================
 
 The highest-impact bypass isn't a clever payload - it's a reachable
-backdoor around the whole control[cite: 1].
+backdoor around the whole control.
 
   INTENDED PATH:
       Client --> CloudFront + WAF --> Origin
@@ -210,59 +210,59 @@ backdoor around the whole control[cite: 1].
 
   HOW ATTACKERS FIND THE ORIGIN:
   - Certificate Transparency logs (crt.sh) for forgotten direct-access
-    subdomains[cite: 1]
-  - Historical DNS records predating the CloudFront migration[cite: 1]
-  - Shodan / Censys search by TLS certificate fingerprint[cite: 1]
+    subdomains
+  - Historical DNS records predating the CloudFront migration
+  - Shodan / Censys search by TLS certificate fingerprint
   - Origin security group allowing 0.0.0.0/0 instead of only CloudFront
-    ranges[cite: 1]
-  - Missing origin-verification header/secret check on the backend[cite: 1]
+    ranges
+  - Missing origin-verification header/secret check on the backend
 
   CONFIRMING THE BYPASS WITH CURL:
   Send a payload WAF blocks through the normal domain, then replay it
-  directly against the candidate origin IP with the correct Host header[cite: 1]:
+  directly against the candidate origin IP with the correct Host header:
 
       curl -H "Host: example.com" https://<candidate-ip>/ -k -v
 
   If the payload succeeds against the direct IP but was blocked via the
-  normal domain, you've demonstrated a full WAF bypass[cite: 1].
+  normal domain, you've demonstrated a full WAF bypass.
 
 
 ================================================================================
 7. CASE STUDY: SQLI DETECTION BYPASS IN AWS MANAGED RULES
 ================================================================================
 
-  Report:   HackerOne #3591725[cite: 1]
-  Link:     https://hackerone.com/reports/3591725[cite: 1]
-  Program:  AWS Vulnerability Disclosure Program[cite: 1]
-  Disclosed: April 2026[cite: 1]
+  Report:   HackerOne #3591725
+  Link:     https://hackerone.com/reports/3591725
+  Program:  AWS Vulnerability Disclosure Program
+  Disclosed: April 2026
 
   WHAT HAPPENED
   --------------
   Researchers built a grammar-aware mutation engine to generate SQL
   injection payloads that stayed syntactically valid to a real database,
   while systematically varying structure to probe AWS WAF's
-  AWSManagedRulesSQLiRuleSet for detection gaps[cite: 1].
+  AWSManagedRulesSQLiRuleSet for detection gaps.
 
   Several payload variants were classified as SQL injection by MySQL 8.x
   when executed, but were NOT flagged by the managed rule set at its
   default (LOW) sensitivity - allowing the injection to reach and execute
   against the backend database in the test environment, resulting in
-  information disclosure[cite: 1].
+  information disclosure.
 
   WHY IT WORKED
   --------------
   - Signature/grammar-based detection can't cover every syntactically
     valid SQL mutation - mutation fuzzing systematically finds the blind
-    spots[cite: 1]
+    spots
   - Default (LOW) rule sensitivity trades detection breadth for
-    false-positive avoidance[cite: 1]
+    false-positive avoidance
   - The gap sat squarely inside AWS's OWN managed rule set - not a
-    misconfiguration by the site owner[cite: 1]
+    misconfiguration by the site owner
 
   TAKEAWAY
   --------
-  Managed rules reduce risk - they don't eliminate it[cite: 1]. Layer WAF with
-  input validation, parameterized queries, and least-privilege DB access[cite: 1].
+  Managed rules reduce risk - they don't eliminate it. Layer WAF with
+  input validation, parameterized queries, and least-privilege DB access.
 
 
 ================================================================================
@@ -275,28 +275,28 @@ backdoor around the whole control[cite: 1].
                                    | the CloudFront managed prefix list
                                    | only; enforce a secret origin-
                                    | verification header on every
-                                   | request[cite: 1].
+                                   | request.
   Layer defense in depth           | Never rely on WAF alone -
                                    | parameterized queries, input
                                    | validation, and least-privilege DB
-                                   | accounts stop what WAF misses[cite: 1].
+                                   | accounts stop what WAF misses.
   Widen rule coverage              | Explicitly configure inspection of
                                    | headers, cookies, and full URI/body
                                    | where managed rules default to
-                                   | partial coverage[cite: 1].
+                                   | partial coverage.
   Raise sensitivity, tune false    | Move SQLi/XSS managed rules from LOW
   positives                        | to HIGH sensitivity where traffic
                                    | patterns allow, and monitor for new
-                                   | bypass classes[cite: 1].
+                                   | bypass classes.
   Continuously test in Count mode  | Regularly fuzz your own WAF
                                    | configuration (mutation-based
                                    | payloads, encoding variants) before
-                                   | attackers do[cite: 1].
+                                   | attackers do.
   Patch inspection blind spots     | Reduce oversized-body blind spots by
                                    | rejecting or fully inspecting
                                    | requests near the 8KB/64KB limit
                                    | rather than passing the excess
-                                   | through[cite: 1].
+                                   | through.
 
 
 ================================================================================
@@ -304,22 +304,22 @@ backdoor around the whole control[cite: 1].
 ================================================================================
 
   1. WAF is a filter, not a firewall for logic - it reduces attack
-     surface, it doesn't eliminate vulnerabilities[cite: 1].
+     surface, it doesn't eliminate vulnerabilities.
 
   2. Most bypasses exploit a parsing gap between what the WAF understands
-     and what the origin actually executes[cite: 1].
+     and what the origin actually executes.
 
   3. Origin exposure is usually the highest-impact finding - check it
-     before anything else[cite: 1].
+     before anything else.
 
   4. Even AWS's own managed rule sets have documented, disclosed
-     detection gaps (see case study above)[cite: 1].
+     detection gaps (see case study above).
 
   5. Defense in depth - secure origin access, validated input,
      parameterized queries - is what actually stops exploitation when
-     WAF is bypassed[cite: 1].
+     WAF is bypassed.
 
 
 ================================================================================
-  For authorized penetration testing & red team engagements only.[cite: 1]
+  For authorized penetration testing & red team engagements only.
 ================================================================================
