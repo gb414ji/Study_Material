@@ -1,0 +1,862 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Centralized AAA Cinematic Flow | 16:9 YouTube</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Orbitron:wght@500;700&display=swap');
+
+  :root {
+    --bg: #0a0e17;
+    --panel: #111827;
+    --border: #1e293b;
+    --cyan: #22d3ee;
+    --blue: #3b82f6;
+    --purple: #a78bfa;
+    --green: #34d399;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --pink: #f472b6;
+    --orange: #fb923c;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    background: #000;
+    overflow: hidden;
+    font-family: 'IBM Plex Mono', monospace;
+    color: var(--text);
+  }
+
+  #stage {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: min(100vw, calc(100vh * 16 / 9));
+    height: min(100vh, calc(100vw * 9 / 16));
+    background: var(--bg);
+    border: 2px solid #1e293b;
+    box-shadow: 0 0 60px rgba(34, 211, 238, 0.12);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  #topbar {
+    height: 48px;
+    background: linear-gradient(90deg, #0f172a, #1e293b);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 20px;
+    flex-shrink: 0;
+  }
+
+  #topbar .logo {
+    font-family: 'Orbitron', sans-serif;
+    font-weight: 700;
+    font-size: 15px;
+    letter-spacing: 2px;
+    color: var(--cyan);
+  }
+
+  #topbar .logo span { color: var(--orange); }
+
+  #progress {
+    flex: 1;
+    height: 4px;
+    background: #1e293b;
+    margin: 0 24px;
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  #progress-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--cyan), var(--orange));
+    transition: width 0.4s ease;
+  }
+
+  #scene-label {
+    font-size: 12px;
+    color: var(--muted);
+    letter-spacing: 1px;
+  }
+
+  #content {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .scene {
+    position: absolute;
+    inset: 0;
+    padding: 22px 30px;
+    opacity: 0;
+    transform: translateY(18px);
+    transition: opacity 0.55s ease, transform 0.55s ease;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .scene.active {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  h1 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    margin-bottom: 10px;
+    background: linear-gradient(90deg, var(--cyan), var(--orange));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  h2 {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 18px;
+    color: var(--cyan);
+    margin-bottom: 10px;
+    letter-spacing: 1px;
+  }
+
+  h3 {
+    font-size: 13px;
+    color: var(--amber);
+    margin: 8px 0 5px;
+    letter-spacing: 0.5px;
+  }
+
+  p, li {
+    font-size: 12.5px;
+    line-height: 1.5;
+    color: var(--text);
+  }
+
+  .muted { color: var(--muted); }
+  .cyan { color: var(--cyan); }
+  .green { color: var(--green); }
+  .amber { color: var(--amber); }
+  .purple { color: var(--purple); }
+  .red { color: var(--red); }
+  .orange { color: var(--orange); }
+  .pink { color: var(--pink); }
+
+  pre.ascii {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    line-height: 1.32;
+    white-space: pre;
+    color: var(--text);
+    margin: 6px 0;
+  }
+
+  .grid-2 {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+    flex: 1;
+  }
+
+  .grid-3 {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 14px;
+  }
+
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+  }
+
+  .card h3 { margin-top: 0; }
+
+  .flow-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 6px;
+  }
+
+  .step {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    opacity: 0.25;
+    transition: opacity 0.35s;
+  }
+
+  .step.visible { opacity: 1; }
+
+  .step-num {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--cyan);
+    color: #000;
+    font-size: 10px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .step-text { font-size: 12px; line-height: 1.35; }
+
+  .badges {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin: 8px 0;
+  }
+
+  .badge {
+    padding: 3px 10px;
+    border-radius: 16px;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: 0.4px;
+    border: 1px solid;
+  }
+
+  .badge.radius { background: rgba(34,211,238,0.14); border-color: var(--cyan); color: var(--cyan); }
+  .badge.tacacs { background: rgba(251,146,60,0.14); border-color: var(--orange); color: var(--orange); }
+  .badge.diameter { background: rgba(167,139,250,0.14); border-color: var(--purple); color: var(--purple); }
+  .badge.ldap { background: rgba(52,211,153,0.14); border-color: var(--green); color: var(--green); }
+
+  #controls {
+    height: 40px;
+    background: #0f172a;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    flex-shrink: 0;
+  }
+
+  button {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+    padding: 4px 13px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 11.5px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  button:hover {
+    border-color: var(--cyan);
+    color: var(--cyan);
+  }
+
+  button.active {
+    background: var(--cyan);
+    color: #000;
+    border-color: var(--cyan);
+  }
+
+  #auto-label {
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11.5px;
+    margin-top: 6px;
+  }
+
+  th, td {
+    border: 1px solid var(--border);
+    padding: 5px 9px;
+    text-align: left;
+  }
+
+  th {
+    background: #1e293b;
+    color: var(--cyan);
+    font-weight: 600;
+  }
+
+  td { background: var(--panel); }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="topbar">
+    <div class="logo">AAA<span>://</span>CENTRAL</div>
+    <div id="progress"><div id="progress-bar"></div></div>
+    <div id="scene-label">SCENE 01 / 10</div>
+  </div>
+
+  <div id="content">
+
+    <!-- SCENE 0: Title -->
+    <div class="scene active" data-scene="0">
+      <div style="flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;">
+        <div style="font-size:12px;color:var(--muted);letter-spacing:3px;margin-bottom:10px;">CINEMATIC PROTOCOL DIAGRAM</div>
+        <h1>CENTRALIZED AAA</h1>
+        <pre class="ascii" style="font-size:12.5px;color:var(--cyan);margin-top:8px;">
+╔════════════════════════════════════════════════════════╗
+║   Authentication  ·  Authorization  ·  Accounting      ║
+║   One Policy Engine  →  Many Network Devices           ║
+╚════════════════════════════════════════════════════════╝
+        </pre>
+        <div class="badges" style="justify-content:center;margin-top:20px;">
+          <span class="badge radius">RADIUS</span>
+          <span class="badge tacacs">TACACS+</span>
+          <span class="badge diameter">Diameter</span>
+          <span class="badge ldap">LDAP / AD</span>
+        </div>
+        <p class="muted" style="margin-top:22px;font-size:11.5px;">Press → or click Next · Auto-play enabled</p>
+      </div>
+    </div>
+
+    <!-- SCENE 1: What is AAA -->
+    <div class="scene" data-scene="1">
+      <h2>01 · WHAT IS CENTRALIZED AAA?</h2>
+      <div class="grid-2">
+        <div>
+          <p><span class="cyan">AAA</span> is the framework that controls who can access a network resource, what they are allowed to do, and records what they did.</p>
+          <h3>THE THREE PILLARS</h3>
+          <ul style="margin-left:16px;margin-top:4px;">
+            <li><span class="cyan">Authentication</span> — Who are you?</li>
+            <li><span class="green">Authorization</span> — What are you allowed to do?</li>
+            <li><span class="amber">Accounting</span> — What did you actually do?</li>
+          </ul>
+          <h3 style="margin-top:12px;">WHY CENTRALIZE?</h3>
+          <pre class="ascii">
+Without Central AAA:
+  Switch A → local users
+  Router B → local users
+  Firewall C → local users
+  → Inconsistent policy · Hard to audit · Password sprawl
+
+With Central AAA:
+  All devices → one AAA server
+  → Single source of truth · Strong audit · Easy revoke
+          </pre>
+        </div>
+        <div>
+          <pre class="ascii">
+┌─────────────────────────────────────────────────┐
+│               CENTRAL AAA SERVER                │
+│         (RADIUS / TACACS+ / Diameter)           │
+└──────────────────────┬──────────────────────────┘
+                       │
+        ┌──────────────┼──────────────┐
+        │              │              │
+        ▼              ▼              ▼
+   ┌─────────┐    ┌─────────┐    ┌─────────┐
+   │ Switch  │    │ Router  │    │ Firewall│
+   │ (NAS)   │    │ (NAS)   │    │ (NAS)   │
+   └────┬────┘    └────┬────┘    └────┬────┘
+        │              │              │
+        ▼              ▼              ▼
+      User           Admin          VPN
+          </pre>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCENE 2: Actors -->
+    <div class="scene" data-scene="2">
+      <h2>02 · KEY ACTORS & TERMINOLOGY</h2>
+      <div class="grid-3">
+        <div class="card">
+          <h3 class="pink">USER / SUPPLICANT</h3>
+          <p>The human or device requesting access. Provides credentials (password, certificate, OTP, etc.).</p>
+        </div>
+        <div class="card">
+          <h3 class="cyan">NAS / NAD</h3>
+          <p><strong>Network Access Server</strong> (or Device). The switch, router, firewall, or wireless controller that enforces access. Talks to the AAA server.</p>
+        </div>
+        <div class="card">
+          <h3 class="orange">AAA SERVER</h3>
+          <p>Central policy engine. Validates credentials, returns authorization attributes, logs sessions. Examples: Cisco ISE, FreeRADIUS, Microsoft NPS, Aruba ClearPass.</p>
+        </div>
+      </div>
+      <div style="margin-top:14px;">
+        <pre class="ascii">
+┌──────────────────────────────────────────────────────────────────┐
+│  IDENTITY STORE                                                  │
+│  • Active Directory / LDAP                                       │
+│  • Local database / Certificates / Token servers                 │
+│  • External IdP (can federate with SSO)                          │
+└──────────────────────────────────────────────────────────────────┘
+
+  NAS        = Network Access Server (the enforcement point)
+  AAA Server = Policy Decision Point
+  Accounting = Session start / interim / stop records
+  AVP / VSA  = Attribute-Value Pairs / Vendor Specific Attributes
+        </pre>
+      </div>
+    </div>
+
+    <!-- SCENE 3: Protocols -->
+    <div class="scene" data-scene="3">
+      <h2>03 · MAJOR AAA PROTOCOLS</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Protocol</th>
+            <th>Primary Use</th>
+            <th>Transport</th>
+            <th>Auth Separation</th>
+            <th>Strength</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="cyan">RADIUS</td>
+            <td>Network access (802.1X, VPN, Wi-Fi)</td>
+            <td>UDP 1812/1813</td>
+            <td>Combined AuthZ</td>
+            <td>Ubiquitous, extensible</td>
+          </tr>
+          <tr>
+            <td class="orange">TACACS+</td>
+            <td>Device admin (CLI / shell)</td>
+            <td>TCP 49</td>
+            <td>Fully separated</td>
+            <td>Command-level control</td>
+          </tr>
+          <tr>
+            <td class="purple">Diameter</td>
+            <td>3G/4G/5G, IMS, large scale</td>
+            <td>TCP/SCTP 3868</td>
+            <td>Flexible</td>
+            <td>Reliable, modern</td>
+          </tr>
+          <tr>
+            <td class="green">LDAP / AD</td>
+            <td>Identity store + simple auth</td>
+            <td>TCP 389/636</td>
+            <td>Auth only</td>
+            <td>Directory source</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="margin-top:12px;">
+        <p><span class="cyan">RADIUS</span> → Best for network access control (NAC), 802.1X, VPN.</p>
+        <p><span class="orange">TACACS+</span> → Best for privileged device administration (who can run which CLI commands).</p>
+        <p><span class="purple">Diameter</span> → Successor to RADIUS for mobile/carrier environments.</p>
+      </div>
+    </div>
+
+    <!-- SCENE 4: RADIUS Flow -->
+    <div class="scene" data-scene="4">
+      <h2>04 · RADIUS — ACCESS REQUEST FLOW</h2>
+      <div class="grid-2">
+        <div>
+          <pre class="ascii" id="radius-ascii">
+ USER      NAS (Switch)      RADIUS Server     Identity Store
+  │             │                  │                 │
+  │ 1. Connect  │                  │                 │
+  │────────────►│                  │                 │
+  │             │ 2. Access-Request│                 │
+  │             │   (User-Name,    │                 │
+  │             │    NAS-IP, etc.) │                 │
+  │             │─────────────────►│                 │
+  │             │                  │ 3. Lookup /     │
+  │             │                  │    Bind / Auth  │
+  │             │                  │────────────────►│
+  │             │                  │◄────────────────│
+  │             │ 4. Access-Accept │                 │
+  │             │   + Attributes   │                 │
+  │             │   (VLAN, ACL…)   │                 │
+  │             │◄─────────────────│                 │
+  │ 5. Access   │                  │                 │
+  │◄────────────│                  │                 │
+  │             │ 6. Accounting    │                 │
+  │             │   Start / Stop   │                 │
+  │             │─────────────────►│                 │
+          </pre>
+        </div>
+        <div>
+          <div class="flow-steps" id="radius-steps">
+            <div class="step"><div class="step-num">1</div><div class="step-text">User connects to switch / AP / VPN concentrator</div></div>
+            <div class="step"><div class="step-num">2</div><div class="step-text">NAS sends Access-Request (UDP) with credentials + context</div></div>
+            <div class="step"><div class="step-num">3</div><div class="step-text">RADIUS server authenticates against AD/LDAP/DB</div></div>
+            <div class="step"><div class="step-num">4</div><div class="step-text">Server replies Access-Accept + authorization attributes</div></div>
+            <div class="step"><div class="step-num">5</div><div class="step-text">NAS enforces VLAN, ACL, QoS, filter-ID, etc.</div></div>
+            <div class="step"><div class="step-num">6</div><div class="step-text">Accounting Start / Interim / Stop records are logged</div></div>
+          </div>
+          <h3 style="margin-top:10px;">COMMON ATTRIBUTES</h3>
+          <p style="font-size:11.5px;">User-Name · NAS-IP-Address · Calling-Station-Id · Tunnel-Private-Group-ID (VLAN) · Filter-Id · Session-Timeout · Framed-IP-Address</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCENE 5: TACACS+ Flow -->
+    <div class="scene" data-scene="5">
+      <h2>05 · TACACS+ — DEVICE ADMINISTRATION FLOW</h2>
+      <div class="grid-2">
+        <div>
+          <pre class="ascii">
+ ADMIN       Network Device        TACACS+ Server
+  │               │                      │
+  │ 1. Login      │                      │
+  │──────────────►│                      │
+  │               │ 2. Authentication    │
+  │               │    Start / Continue  │
+  │               │─────────────────────►│
+  │               │ 3. Auth Reply        │
+  │               │◄─────────────────────│
+  │ 4. Prompt     │                      │
+  │◄──────────────│                      │
+  │               │                      │
+  │ 5. Command    │                      │
+  │──────────────►│                      │
+  │               │ 6. Authorization     │
+  │               │    Request (cmd)     │
+  │               │─────────────────────►│
+  │               │ 7. AuthZ Reply       │
+  │               │    (permit / deny)   │
+  │               │◄─────────────────────│
+  │               │ 8. Accounting        │
+  │               │    (command log)     │
+  │               │─────────────────────►│
+          </pre>
+        </div>
+        <div>
+          <div class="flow-steps" id="tacacs-steps">
+            <div class="step"><div class="step-num">1</div><div class="step-text">Admin initiates login to switch/router/firewall</div></div>
+            <div class="step"><div class="step-num">2</div><div class="step-text">Device starts TACACS+ authentication conversation</div></div>
+            <div class="step"><div class="step-num">3</div><div class="step-text">Server validates credentials (can use AD)</div></div>
+            <div class="step"><div class="step-num">4</div><div class="step-text">Device presents shell / privilege level</div></div>
+            <div class="step"><div class="step-num">5</div><div class="step-text">Admin types a command</div></div>
+            <div class="step"><div class="step-num">6</div><div class="step-text">Device asks TACACS+ server: “Is this command allowed?”</div></div>
+            <div class="step"><div class="step-num">7</div><div class="step-text">Server returns permit or deny (command authorization)</div></div>
+            <div class="step"><div class="step-num">8</div><div class="step-text">Every command is accounted (who, what, when)</div></div>
+          </div>
+          <h3 style="margin-top:8px;">KEY ADVANTAGE</h3>
+          <p style="font-size:12px;">Full separation of Authentication, Authorization, and Accounting. Ideal for privileged access management on network devices.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCENE 6: 802.1X -->
+    <div class="scene" data-scene="6">
+      <h2>06 · IEEE 802.1X + RADIUS (PORT-BASED NAC)</h2>
+      <div class="grid-2">
+        <div>
+          <pre class="ascii">
+ Supplicant          Authenticator         Authentication
+ (Client)            (Switch / AP)         Server (RADIUS)
+     │                     │                      │
+     │ 1. EAPOL-Start      │                      │
+     │────────────────────►│                      │
+     │ 2. EAP-Request      │                      │
+     │   Identity          │                      │
+     │◄────────────────────│                      │
+     │ 3. EAP-Response     │                      │
+     │   Identity          │                      │
+     │────────────────────►│ 4. RADIUS            │
+     │                     │   Access-Request     │
+     │                     │─────────────────────►│
+     │                     │ 5. Access-Challenge  │
+     │                     │◄─────────────────────│
+     │ 6. EAP methods      │                      │
+     │   (PEAP/TLS/…)      │                      │
+     │◄───────────────────►│◄────────────────────►│
+     │                     │ 7. Access-Accept     │
+     │                     │   + VLAN / ACL       │
+     │                     │◄─────────────────────│
+     │ 8. Port authorized  │                      │
+     │◄────────────────────│                      │
+          </pre>
+        </div>
+        <div>
+          <h3>COMMON EAP METHODS</h3>
+          <ul style="margin-left:14px;font-size:12px;line-height:1.6;">
+            <li><span class="cyan">EAP-TLS</span> — Certificate-based (strongest)</li>
+            <li><span class="green">PEAP / MSCHAPv2</span> — Username + password inside TLS</li>
+            <li><span class="purple">EAP-TTLS</span> — Tunneled TLS</li>
+            <li><span class="amber">EAP-FAST</span> — Cisco flexible auth</li>
+          </ul>
+          <h3 style="margin-top:10px;">WHAT THE SWITCH ENFORCES</h3>
+          <p style="font-size:12px;">After Access-Accept the NAS applies:</p>
+          <ul style="margin-left:14px;font-size:12px;line-height:1.55;">
+            <li>Dynamic VLAN assignment</li>
+            <li>Downloadable ACLs / dACL</li>
+            <li>URL redirection (guest / posture)</li>
+            <li>Session timeout / reauth</li>
+            <li>QoS / bandwidth limits</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCENE 7: Accounting & CoA -->
+    <div class="scene" data-scene="7">
+      <h2>07 · ACCOUNTING, CoA & SESSION CONTROL</h2>
+      <div class="grid-2">
+        <div>
+          <h3 class="amber">ACCOUNTING RECORDS</h3>
+          <pre class="ascii">
+Accounting-Request (Start)
+  • User-Name
+  • NAS-IP-Address
+  • Acct-Session-Id
+  • Acct-Status-Type = Start
+  • Calling-Station-Id (MAC)
+  • Framed-IP-Address
+
+Accounting-Request (Interim-Update)
+  • Acct-Input-Octets / Output
+  • Acct-Session-Time
+
+Accounting-Request (Stop)
+  • Acct-Terminate-Cause
+  • Final counters
+          </pre>
+        </div>
+        <div>
+          <h3 class="cyan">CHANGE OF AUTHORIZATION (CoA)</h3>
+          <p style="font-size:12px;">AAA server can push mid-session changes:</p>
+          <ul style="margin-left:14px;font-size:12px;line-height:1.55;">
+            <li>Re-assign VLAN</li>
+            <li>Apply new ACL</li>
+            <li>Force re-authentication</li>
+            <li>Disconnect (DM – Disconnect Message)</li>
+          </ul>
+          <h3 style="margin-top:10px;">TYPICAL USE CASES</h3>
+          <ul style="margin-left:14px;font-size:12px;line-height:1.55;">
+            <li>Posture assessment fails → quarantine VLAN</li>
+            <li>User moves from employee to contractor</li>
+            <li>Security incident → immediate disconnect</li>
+            <li>Guest session time expiry</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCENE 8: Architecture -->
+    <div class="scene" data-scene="8">
+      <h2>08 · TYPICAL ENTERPRISE ARCHITECTURE</h2>
+      <pre class="ascii" style="font-size:11.5px;">
+                         ┌─────────────────────────────┐
+                         │     Identity Sources        │
+                         │  AD / LDAP / Certs / MFA    │
+                         └──────────────┬──────────────┘
+                                        │
+                         ┌──────────────▼──────────────┐
+                         │     AAA / Policy Engine     │
+                         │  Cisco ISE · ClearPass ·    │
+                         │  FreeRADIUS · Microsoft NPS │
+                         └──────────────┬──────────────┘
+                                        │
+              ┌─────────────────────────┼─────────────────────────┐
+              │                         │                         │
+     ┌────────▼────────┐      ┌─────────▼────────┐      ┌─────────▼────────┐
+     │ Wired Access    │      │ Wireless Access  │      │ VPN / Remote     │
+     │ (Switches)      │      │ (WLC / APs)      │      │ (ASA / FTD / …)  │
+     │ 802.1X + MAB    │      │ 802.1X + Guest   │      │ RADIUS / SAML    │
+     └─────────────────┘      └──────────────────┘      └──────────────────┘
+
+  Policy Decision Point (PDP) = AAA Server
+  Policy Enforcement Point (PEP) = Switch / WLC / Firewall
+  Policy Information Point (PIP) = AD, posture, threat feeds
+        </pre>
+      <div class="grid-3" style="margin-top:10px;">
+        <div class="card">
+          <h3 class="cyan">Wired</h3>
+          <p style="font-size:11.5px;">802.1X + MAC Authentication Bypass (MAB) for printers/IoT</p>
+        </div>
+        <div class="card">
+          <h3 class="green">Wireless</h3>
+          <p style="font-size:11.5px;">WPA2/3-Enterprise, Guest portal, profiling</p>
+        </div>
+        <div class="card">
+          <h3 class="orange">Admin</h3>
+          <p style="font-size:11.5px;">TACACS+ for CLI privilege levels & command sets</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- SCENE 9: Security & Best Practices -->
+    <div class="scene" data-scene="9">
+      <h2>09 · SECURITY & BEST PRACTICES</h2>
+      <div class="grid-2">
+        <div class="card">
+          <h3 class="red">COMMON PITFALLS</h3>
+          <ul style="margin-left:14px;font-size:12px;line-height:1.55;">
+            <li>Shared RADIUS secret too weak / reused</li>
+            <li>No message authenticator (UDP spoofing)</li>
+            <li>Accounting not enabled → blind sessions</li>
+            <li>Overly permissive default authorization</li>
+            <li>No CoA / Disconnect capability</li>
+            <li>Plain PAP instead of EAP-TLS / PEAP</li>
+            <li>Single AAA server (no high availability)</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h3 class="green">RECOMMENDED PRACTICES</h3>
+          <ul style="margin-left:14px;font-size:12px;line-height:1.55;">
+            <li>Use strong, unique shared secrets</li>
+            <li>Prefer EAP-TLS or PEAP over PAP/CHAP</li>
+            <li>Enable Accounting + Interim updates</li>
+            <li>Deploy AAA servers in HA pairs</li>
+            <li>Use CoA for dynamic policy changes</li>
+            <li>Separate TACACS+ for device admin</li>
+            <li>Monitor failed auth & anomalous sessions</li>
+            <li>Certificate-based machine auth where possible</li>
+          </ul>
+        </div>
+      </div>
+      <div style="margin-top:12px;">
+        <pre class="ascii">
+GOLDEN RULE: The NAS only enforces what the AAA server decides.
+             Keep the policy engine central, the enforcement points
+             simple, and every session fully accounted.
+        </pre>
+      </div>
+    </div>
+
+    <!-- SCENE 10: Summary -->
+    <div class="scene" data-scene="10">
+      <div style="flex:1;display:flex;flex-direction:column;justify-content:center;">
+        <h2 style="text-align:center;">10 · CENTRALIZED AAA AT A GLANCE</h2>
+        <pre class="ascii" style="font-size:12px;text-align:center;margin:10px auto;">
+┌──────────────────────────────────────────────────────────────────┐
+│                                                                  │
+│   USER  ──credentials──►  NAS  ──RADIUS/TACACS+──►  AAA Server   │
+│     ▲                      │                          │          │
+│     │                      │                          │          │
+│     └──── access ──────────┴──── attributes ──────────┘          │
+│                                                                  │
+│   AuthN → AuthZ → Accounting                                     │
+│   Protocols: RADIUS · TACACS+ · Diameter · 802.1X + EAP          │
+│                                                                  │
+└──────────────────────────────────────────────────────────────────┘
+        </pre>
+        <div class="grid-3" style="margin-top:14px;">
+          <div class="card" style="text-align:center;">
+            <div class="cyan" style="font-size:16px;font-weight:700;">RADIUS</div>
+            <div class="muted" style="font-size:10.5px;margin-top:3px;">Network Access Control</div>
+          </div>
+          <div class="card" style="text-align:center;">
+            <div class="orange" style="font-size:16px;font-weight:700;">TACACS+</div>
+            <div class="muted" style="font-size:10.5px;margin-top:3px;">Device Administration</div>
+          </div>
+          <div class="card" style="text-align:center;">
+            <div class="purple" style="font-size:16px;font-weight:700;">802.1X</div>
+            <div class="muted" style="font-size:10.5px;margin-top:3px;">Port-based NAC</div>
+          </div>
+        </div>
+        <p style="text-align:center;margin-top:16px;color:var(--muted);font-size:11.5px;">
+          Authenticate once centrally · Authorize with policy · Account every action.
+        </p>
+      </div>
+    </div>
+
+  </div>
+
+  <div id="controls">
+    <button id="btn-prev">← Prev</button>
+    <button id="btn-play" class="active">⏸ Pause</button>
+    <button id="btn-next">Next →</button>
+    <span id="auto-label">Auto-play · 9s / scene</span>
+  </div>
+</div>
+
+<script>
+  const scenes = document.querySelectorAll('.scene');
+  const progressBar = document.getElementById('progress-bar');
+  const sceneLabel = document.getElementById('scene-label');
+  const btnPrev = document.getElementById('btn-prev');
+  const btnNext = document.getElementById('btn-next');
+  const btnPlay = document.getElementById('btn-play');
+  const autoLabel = document.getElementById('auto-label');
+
+  let current = 0;
+  let autoPlay = true;
+  let timer = null;
+  const SCENE_DURATION = 9000;
+
+  function showScene(index) {
+    scenes.forEach((s, i) => {
+      s.classList.toggle('active', i === index);
+    });
+    current = index;
+    progressBar.style.width = ((index + 1) / scenes.length * 100) + '%';
+    sceneLabel.textContent = `SCENE ${String(index + 1).padStart(2, '0')} / ${String(scenes.length).padStart(2, '0')}`;
+    animateSteps(index);
+  }
+
+  function animateSteps(sceneIndex) {
+    document.querySelectorAll('.step').forEach(s => s.classList.remove('visible'));
+    const map = {
+      4: document.getElementById('radius-steps'),
+      5: document.getElementById('tacacs-steps')
+    };
+    const container = map[sceneIndex];
+    if (!container) return;
+    const steps = container.querySelectorAll('.step');
+    steps.forEach((step, i) => {
+      setTimeout(() => step.classList.add('visible'), 350 + i * 500);
+    });
+  }
+
+  function next() {
+    showScene(current < scenes.length - 1 ? current + 1 : 0);
+    resetTimer();
+  }
+
+  function prev() {
+    showScene(current > 0 ? current - 1 : scenes.length - 1);
+    resetTimer();
+  }
+
+  function resetTimer() {
+    clearInterval(timer);
+    if (autoPlay) timer = setInterval(next, SCENE_DURATION);
+  }
+
+  function togglePlay() {
+    autoPlay = !autoPlay;
+    btnPlay.textContent = autoPlay ? '⏸ Pause' : '▶ Play';
+    btnPlay.classList.toggle('active', autoPlay);
+    autoLabel.textContent = autoPlay ? 'Auto-play · 9s / scene' : 'Paused';
+    if (autoPlay) resetTimer();
+    else clearInterval(timer);
+  }
+
+  btnNext.addEventListener('click', next);
+  btnPrev.addEventListener('click', prev);
+  btnPlay.addEventListener('click', togglePlay);
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); next(); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); prev(); }
+    if (e.key === 'p' || e.key === 'P') togglePlay();
+  });
+
+  showScene(0);
+  resetTimer();
+</script>
+</body>
+</html>
