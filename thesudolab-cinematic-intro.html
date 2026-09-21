@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>thesudolab — cinematic intro</title>
+<style>
+  :root {
+    box-sizing: border-box;
+    --page: #0b0b0d;
+    --ink: #eceef2;
+    --muted: #8b909a;
+    --line: #23252b;
+    --chip: #17181c;
+    --red: #ff3030;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--page);
+    color: var(--ink);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.5;
+  }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 24px 16px 48px; }
+
+  .player {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 9;
+    background: #000;
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    user-select: none;
+  }
+  .player:fullscreen { border-radius: 0; }
+  canvas { display: block; width: 100%; height: 100%; }
+
+  .bar {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 28px 14px 10px;
+    background: linear-gradient(to top, rgba(0,0,0,.8), rgba(0,0,0,0));
+    color: #fff;
+    opacity: 0;
+    transition: opacity .2s;
+  }
+  .player:hover .bar, .player:focus-within .bar, .player.ended .bar, .player.paused .bar { opacity: 1; }
+  .track {
+    position: relative; height: 4px; background: rgba(255,255,255,.28);
+    border-radius: 2px; cursor: pointer; margin-bottom: 10px;
+  }
+  .track:hover { height: 6px; margin-top: -1px; margin-bottom: 9px; }
+  .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--red); border-radius: 2px; }
+  .knob {
+    position: absolute; top: 50%; left: 0; width: 13px; height: 13px; border-radius: 50%;
+    background: var(--red); transform: translate(-50%, -50%);
+  }
+  .row { display: flex; align-items: center; gap: 12px; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .grow { flex: 1; }
+  button.ctl {
+    background: none; border: 0; color: #fff; padding: 4px 6px; cursor: pointer;
+    display: inline-flex; align-items: center; border-radius: 6px; font: inherit;
+  }
+  button.ctl:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  button.ctl svg { width: 24px; height: 24px; fill: currentColor; }
+  button.loop { opacity: .6; font-size: 13px; }
+  button.loop[aria-pressed="true"] { opacity: 1; color: var(--red); }
+  .hd { font-size: 11px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: var(--red); color: #fff; }
+
+  h1 { font-size: clamp(20px, 3vw, 26px); margin: 18px 0 4px; font-weight: 600; letter-spacing: -.01em; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 16px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { background: var(--chip); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 13px; }
+  .chip b { color: var(--red); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="player paused" id="player" tabindex="0" aria-label="thesudolab cinematic intro, 5 seconds">
+    <canvas id="c" width="1920" height="1080"></canvas>
+    <div class="bar">
+      <div class="track" id="track" role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="5" aria-valuenow="0">
+        <div class="fill" id="fill"></div><div class="knob" id="knob"></div>
+      </div>
+      <div class="row">
+        <button class="ctl" id="play" aria-label="Play or pause"></button>
+        <span id="time">0:00 / 0:05</span>
+        <span class="grow"></span>
+        <button class="ctl loop" id="loop" aria-pressed="false" aria-label="Loop">Loop</button>
+        <span class="hd">1080p</span>
+        <button class="ctl" id="fs" aria-label="Fullscreen">
+          <svg viewBox="0 0 24 24"><path d="M4 4h6v2H6v4H4V4zm10 0h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm14 0h2v6h-6v-2h4v-4z"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <h1>thesudolab — cinematic intro</h1>
+  <p class="sub">A five-second title sequence built from text characters. Space to play or pause, arrow keys to step, F for fullscreen.</p>
+  <div class="chips">
+    <span class="chip"><b>1920 × 1080</b> canvas</span>
+    <span class="chip"><b>16:9</b> frame, 2.39:1 letterbox</span>
+    <span class="chip"><b>0:05</b> runtime</span>
+  </div>
+</div>
+
+<script>
+(function () {
+  var DURATION = 5.0;
+  var IMPACT = 2.9;                       // moment LAB ignites
+  var W = 1920, H = 1080, CW = 15, CH = 24;
+  var COLS = W / CW, ROWS = H / CH;       // 128 x 45
+  var TITLE_Y = 0.46;                     // vertical position of the wordmark
+  var BAR = 138;                          // letterbox bar height (2.39:1)
+
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var player = document.getElementById('player');
+  var fam = 'ui-monospace, Menlo, Consolas, "DejaVu Sans Mono", "Courier New", monospace';
+
+  /* ---------- helpers ---------- */
+  function hash(a, b, c) {
+    var h = (a * 374761393 + b * 668265263 + (c || 0) * 2147483647) | 0;
+    h = (h ^ (h >>> 13)) * 1274126177 | 0;
+    h = h ^ (h >>> 16);
+    return (h >>> 0) / 4294967295;
+  }
+  function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+  function lerp(a, b, k) { return a + (b - a) * k; }
+  function easeOut(x) { x = clamp(x, 0, 1); return 1 - Math.pow(1 - x, 3); }
+  function rgba(r, g, b, a) { return 'rgba(' + (r | 0) + ',' + (g | 0) + ',' + (b | 0) + ',' + clamp(a, 0, 1).toFixed(3) + ')'; }
+  var NOISE = "*+=~^<>/\\|#%&";
+  function noiseGlyph(a, b, c) { return NOISE.charAt(Math.floor(hash(a, b, c) * NOISE.length)); }
+
+  /* ---------- sample "THESUDOLAB" into a character grid ---------- */
+  var OS = 4;
+  var off = document.createElement('canvas');
+  off.width = COLS * OS; off.height = ROWS * OS;
+  var o = off.getContext('2d');
+  var label = "THESUDOLAB";
+  o.font = 'bold 100px ' + fam;
+  var tw = o.measureText(label).width;
+  var fsz = 100 * (COLS * OS * 0.84) / tw;
+  o.font = 'bold ' + fsz + 'px ' + fam;
+  o.textAlign = 'center';
+  var wTot = o.measureText(label).width;
+  var squash = CW / CH;
+  o.setTransform(1, 0, 0, squash, 0, 0);
+  o.fillStyle = '#fff';
+  var capH = fsz * 0.72;
+  o.fillText(label, COLS * OS / 2, (ROWS * OS * TITLE_Y) / squash + capH / 2);
+  var px = o.getImageData(0, 0, off.width, off.height).data;
+  var startX = COLS * OS / 2 - wTot / 2, adv = wTot / label.length;
+
+  var targets = [];
+  var lab = { minX: 1e9, maxX: -1e9, minY: 1e9, maxY: -1e9 };
+  var minC = COLS, maxC = 0, minR = ROWS, maxR = 0;
+  for (var r = 0; r < ROWS; r++) {
+    for (var c = 0; c < COLS; c++) {
+      var sum = 0;
+      for (var yy = 0; yy < OS; yy++)
+        for (var xx = 0; xx < OS; xx++)
+          sum += px[(((r * OS + yy) * off.width) + (c * OS + xx)) * 4 + 3];
+      var cov = sum / (255 * OS * OS);
+      if (cov > 0.32) {
+        var li = clamp(Math.floor((c * OS + OS / 2 - startX) / adv), 0, label.length - 1);
+        targets.push({ c: c, r: r, cov: cov, letter: li, lab: li >= 7 });
+        if (c < minC) minC = c; if (c > maxC) maxC = c;
+        if (r < minR) minR = r; if (r > maxR) maxR = r;
+        if (li >= 7) {
+          var X = c * CW + CW / 2, Y = r * CH + CH / 2;
+          if (X < lab.minX) lab.minX = X; if (X > lab.maxX) lab.maxX = X;
+          if (Y < lab.minY) lab.minY = Y; if (Y > lab.maxY) lab.maxY = Y;
+        }
+      }
+    }
+  }
+  var midC = (minC + maxC) / 2, halfC = Math.max(1, (maxC - minC) / 2);
+  targets.forEach(function (t) {
+    var dn = Math.abs(t.c - midC) / halfC;                 // center-out reveal
+    t.reveal = 0.9 + dn * 1.3 + hash(t.c, t.r, 7) * 0.2;
+  });
+  var labCx = (lab.minX + lab.maxX) / 2, labCy = (lab.minY + lab.maxY) / 2;
+  var titleCy = (minR + maxR) / 2 * CH + CH / 2;
+
+  function finalChar(cov) { return cov > 0.85 ? '@' : cov > 0.68 ? '#' : cov > 0.5 ? '%' : '*'; }
+  function devChar(p) { return p < 0.25 ? '.' : p < 0.5 ? ':' : p < 0.75 ? '+' : '*'; }
+
+  /* ---------- vignette gradient (built once) ---------- */
+  var vig = ctx.createRadialGradient(W / 2, H / 2, H * 0.28, W / 2, H / 2, H * 1.05);
+  vig.addColorStop(0, 'rgba(0,0,0,0)');
+  vig.addColorStop(1, 'rgba(0,0,0,0.78)');
+
+  var TAG = "ROOT ACCESS GRANTED";
+
+  /* ---------- render at time t (deterministic) ---------- */
+  function render(t) {
+    var fr = Math.floor(t * 24);                            // film-rate jitter
+    var dt = t - IMPACT;
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#050506';
+    ctx.fillRect(0, 0, W, H);
+
+    /* --- camera: slow push-in + impact shake --- */
+    var push = 1 + 0.08 * (t / DURATION);
+    var shake = dt >= 0 ? 14 * Math.exp(-dt * 9) : 0;
+    var sx = (hash(fr, 1, 9) - 0.5) * 2 * shake;
+    var sy = (hash(fr, 2, 9) - 0.5) * 2 * shake;
+    ctx.save();
+    ctx.translate(W / 2 + sx, H / 2 + sy);
+    ctx.scale(push, push);
+    ctx.translate(-W / 2, -H / 2);
+
+    /* --- backlight: cool before impact, red after --- */
+    var cool = 0.11 * clamp((t - 0.8) / 1.5, 0, 1);
+    var hot = dt >= 0 ? 0.24 * Math.exp(-dt * 1.3) + 0.07 : 0;
+    ctx.globalCompositeOperation = 'lighter';
+    var bg = ctx.createRadialGradient(W / 2, titleCy, 20, W / 2, titleCy, 950);
+    if (dt >= 0) {
+      bg.addColorStop(0, rgba(255, 50, 40, hot));
+      bg.addColorStop(1, 'rgba(255,50,40,0)');
+    } else {
+      bg.addColorStop(0, rgba(110, 140, 220, cool));
+      bg.addColorStop(1, 'rgba(110,140,220,0)');
+    }
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+    ctx.globalCompositeOperation = 'source-over';
+
+    /* --- drifting dust --- */
+    ctx.font = 'bold 18px ' + fam;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (var d = 0; d < 46; d++) {
+      var dx = ((hash(d, 1) * W + t * (6 + hash(d, 2) * 14)) % W);
+      var dy = ((hash(d, 3) * H - t * (8 + hash(d, 4) * 16)) % H + H) % H;
+      var da = (0.07 + hash(d, 5) * 0.14) * (0.6 + 0.4 * Math.sin(t * 2 + d));
+      ctx.fillStyle = rgba(200, 210, 230, da);
+      ctx.fillText('.', dx, dy);
+    }
+
+    /* --- anamorphic light streak (0.3s -> 1.7s) --- */
+    if (t > 0.3 && t < 1.7) {
+      var sw = W * easeOut((t - 0.3) / 0.8);
+      var sa = t < 1.2 ? 1 : 1 - (t - 1.2) / 0.5;
+      var sg = ctx.createLinearGradient(W / 2 - sw / 2, 0, W / 2 + sw / 2, 0);
+      sg.addColorStop(0, 'rgba(190,215,255,0)');
+      sg.addColorStop(0.5, rgba(215, 232, 255, sa));
+      sg.addColorStop(1, 'rgba(190,215,255,0)');
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.fillStyle = sg;
+      ctx.fillRect(W / 2 - sw / 2, titleCy - 1.5, sw, 3);
+      ctx.globalAlpha = 0.18;
+      ctx.fillRect(W / 2 - sw / 2, titleCy - 14, sw, 28);
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.font = 'bold 21px ' + fam;
+      for (var k = 0; k < COLS; k++) {
+        var cx = k * CW + CW / 2;
+        var e = 1 - Math.abs(cx - W / 2) / (sw / 2 + 1);
+        if (e <= 0) continue;
+        ctx.fillStyle = rgba(230, 240, 255, e * sa * 0.5);
+        ctx.fillText(k % 2 ? '-' : '=', cx, titleCy - 16);
+      }
+    }
+
+    /* --- the wordmark --- */
+    ctx.font = 'bold 21px ' + fam;
+    var sweepPos = -300 + ((t - 3.3) / 1.0) * (W + 600);
+    var sweeping = t > 3.3 && t < 4.3;
+    for (var i = 0; i < targets.length; i++) {
+      var tg = targets[i];
+      var x = tg.c * CW + CW / 2, y = tg.r * CH + CH / 2;
+      var ch, cr, cg, cb, ca, glow = 0, gcol = 'rgba(170,200,255,.5)';
+
+      if (!tg.lab) {
+        var dev = (t - tg.reveal) / 0.5;
+        if (dev < 0) continue;
+        var p = Math.min(1, dev);
+        ch = dev < 1 ? devChar(p) : finalChar(tg.cov);
+        cr = 236; cg = 240; cb = 247;
+        ca = 0.25 + 0.75 * p;
+        if (dev >= 1) ca *= 0.92 + 0.08 * hash(tg.c, tg.r, Math.floor(t * 8));
+        if (dev < 1) { cr = lerp(150, 236, p); cg = lerp(190, 240, p); cb = 255; glow = 12; gcol = 'rgba(150,190,255,.9)'; }
+        else glow = 6;
+      } else {
+        if (t < 1.4) continue;
+        var ghost = false;
+        if (t < 2.35) ghost = true;
+        else if (dt < 0) {
+          var pOn = 0.15 + ((t - 2.35) / 0.55) * 0.6;
+          if (hash(tg.letter, Math.floor(t * 18), 3) >= pOn) ghost = true;
+        }
+        if (ghost) {
+          ch = '.'; cr = 255; cg = 60; cb = 60; ca = 0.12 + 0.05 * Math.sin(t * 5 + tg.c);
+        } else if (dt < 0) {                       // neon tube catching
+          ch = finalChar(tg.cov); cr = 255; cg = 60; cb = 60; ca = 0.55; glow = 10; gcol = 'rgba(255,40,40,.8)';
+        } else {                                   // ignition
+          ch = finalChar(tg.cov);
+          if (dt < 0.12 && hash(tg.c, tg.r, fr) < 0.55 * (1 - dt / 0.12)) ch = noiseGlyph(tg.c, tg.r, fr);
+          var heat = clamp(1 - dt / 0.3, 0, 1);
+          cr = 255; cg = lerp(48, 235, heat); cb = lerp(48, 225, heat); ca = 1;
+          glow = 14 + 22 * heat + 3 * Math.sin(t * 6); gcol = 'rgba(255,30,30,.9)';
+        }
+      }
+
+      if (sweeping) {
+        var s = 1 - Math.abs((x + y * 0.35) - sweepPos) / 170;
+        if (s > 0) {
+          cr = lerp(cr, 255, s); cg = lerp(cg, tg.lab ? 200 : 255, s); cb = lerp(cb, tg.lab ? 190 : 255, s);
+          ca = Math.max(ca, 0.4 + 0.6 * s); glow = Math.max(glow, 14 * s);
+        }
+      }
+
+      ctx.shadowColor = gcol;
+      ctx.shadowBlur = glow;
+      ctx.fillStyle = rgba(cr, cg, cb, ca);
+      ctx.fillText(ch, x, y);
+    }
+    ctx.shadowBlur = 0;
+
+    /* --- impact: horizontal flare + shockwave ring --- */
+    if (dt >= 0 && dt < 0.7) {
+      var fa = 1 - dt / 0.7;
+      ctx.globalCompositeOperation = 'lighter';
+      var fg = ctx.createLinearGradient(0, 0, W, 0);
+      fg.addColorStop(0, 'rgba(255,90,80,0)');
+      fg.addColorStop(0.5, rgba(255, 170, 150, fa));
+      fg.addColorStop(1, 'rgba(255,90,80,0)');
+      ctx.fillStyle = fg;
+      ctx.fillRect(0, labCy - 2.5, W, 5);
+      ctx.globalAlpha = 0.18 * fa;
+      ctx.fillRect(0, labCy - 20, W, 40);
+      ctx.globalAlpha = 1;
+      ctx.globalCompositeOperation = 'source-over';
+    }
+    if (dt >= 0 && dt < 0.9) {
+      var R = dt * 1100, ra = Math.pow(1 - dt / 0.9, 1.5) * 0.9;
+      var n = Math.floor(2 * Math.PI * R / 16) + 8;
+      ctx.font = 'bold 20px ' + fam;
+      var glyphs = ".o+*";
+      for (var j = 0; j < n; j++) {
+        var ang = (j / n) * 2 * Math.PI + 0.3;
+        var rx = labCx + Math.cos(ang) * R, ry = labCy + Math.sin(ang) * R * 0.72;
+        if (rx < -20 || rx > W + 20 || ry < -20 || ry > H + 20) continue;
+        ctx.fillStyle = rgba(255, 120, 100, ra);
+        ctx.fillText(glyphs.charAt(j % 4), rx, ry);
+      }
+    }
+
+    /* --- embers rising from LAB --- */
+    if (dt >= 0) {
+      var EM = "*.'^+`";
+      for (var q = 0; q < 90; q++) {
+        var birth = IMPACT + hash(q, 1) * 1.1;
+        var life = 1.3 + hash(q, 2) * 1.4;
+        var age = t - birth;
+        if (age < 0 || age > life) continue;
+        var k2 = age / life;
+        var ex = lab.minX + hash(q, 3) * (lab.maxX - lab.minX) + (hash(q, 6) - 0.5) * 80 * age + Math.sin(age * 4 + hash(q, 7) * 6) * 10;
+        var ey = lab.minY + hash(q, 4) * (lab.maxY - lab.minY) - (90 + hash(q, 5) * 220) * age + 40 * age * age;
+        ctx.font = 'bold ' + (14 + Math.floor(hash(q, 8) * 12)) + 'px ' + fam;
+        ctx.fillStyle = rgba(lerp(255, 255, k2), lerp(220, 60, k2), lerp(150, 40, k2), (1 - k2) * (0.55 + 0.45 * hash(q, fr, 2)));
+        ctx.fillText(EM.charAt(Math.floor(hash(q, 9) * EM.length)), ex, ey);
+      }
+    }
+
+    /* --- tagline --- */
+    if (t > 3.75) {
+      var tp = clamp((t - 3.75) / 0.65, 0, 1);
+      ctx.font = 'bold 26px ' + fam;
+      var stepPx = 15.6 + 9 + 9 * tp;                // tracking opens as it fades in
+      var total = (TAG.length - 1) * stepPx;
+      var tyy = titleCy + 200;
+      for (var m = 0; m < TAG.length; m++) {
+        if (TAG.charAt(m) === ' ') continue;
+        ctx.fillStyle = rgba(236, 240, 247, easeOut(tp) * 0.9);
+        ctx.fillText(TAG.charAt(m), W / 2 - total / 2 + m * stepPx, tyy);
+      }
+      var lw = 90 * easeOut(tp);
+      ctx.fillStyle = rgba(255, 48, 48, easeOut(tp));
+      ctx.fillRect(W / 2 - lw / 2, tyy + 30, lw, 3);
+    }
+    ctx.restore();
+
+    /* --- post: vignette, grain, scratches, flicker, letterbox, flash, fade --- */
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, W, H);
+
+    for (var g = 0; g < 700; g++) {
+      var gx = hash(g, fr, 11) * W, gy = hash(g, fr, 12) * H;
+      ctx.fillStyle = rgba(255, 255, 255, 0.03 + hash(g, fr, 13) * 0.07);
+      ctx.fillRect(gx, gy, 2, 2);
+    }
+    if (hash(fr, 77, 5) < 0.07) {
+      ctx.fillStyle = 'rgba(255,255,255,0.07)';
+      ctx.fillRect(hash(fr, 78, 5) * W, 0, 1, H);
+    }
+    ctx.fillStyle = rgba(0, 0, 0, 0.05 * hash(fr, 99, 1));
+    ctx.fillRect(0, 0, W, H);
+
+    var bh = BAR * easeOut(t / 0.7);
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, W, bh);
+    ctx.fillRect(0, H - bh, W, bh);
+
+    if (dt >= 0 && dt < 0.25) {
+      ctx.fillStyle = rgba(255, 90, 80, 0.32 * (1 - dt / 0.25));
+      ctx.fillRect(0, 0, W, H);
+    }
+    if (t > 4.65) {
+      ctx.fillStyle = rgba(0, 0, 0, (t - 4.65) / 0.35);
+      ctx.fillRect(0, 0, W, H);
+    }
+  }
+
+  /* ---------- player controls ---------- */
+  var playBtn = document.getElementById('play');
+  var timeEl = document.getElementById('time');
+  var fill = document.getElementById('fill');
+  var knob = document.getElementById('knob');
+  var track = document.getElementById('track');
+  var loopBtn = document.getElementById('loop');
+  var ICON_PLAY = '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>';
+  var ICON_PAUSE = '<svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>';
+  var ICON_REPLAY = '<svg viewBox="0 0 24 24"><path d="M12 5V2L7 6.5 12 11V8a5 5 0 1 1-5 5H5a7 7 0 1 0 7-8z"/></svg>';
+
+  var t = 0, playing = false, last = 0, raf = 0, looping = false;
+
+  function ui() {
+    var p = t / DURATION;
+    fill.style.width = (p * 100) + '%';
+    knob.style.left = (p * 100) + '%';
+    timeEl.textContent = '0:0' + Math.min(5, Math.floor(t)) + ' / 0:05';
+    track.setAttribute('aria-valuenow', t.toFixed(1));
+    var ended = t >= DURATION;
+    player.classList.toggle('ended', ended);
+    player.classList.toggle('paused', !playing && !ended);
+    playBtn.innerHTML = ended ? ICON_REPLAY : (playing ? ICON_PAUSE : ICON_PLAY);
+  }
+  function frame(now) {
+    if (!playing) return;
+    t = Math.min(DURATION, t + (now - last) / 1000);
+    last = now;
+    render(t); ui();
+    if (t >= DURATION) {
+      playing = false;
+      if (looping) { play(); return; }
+      ui(); return;
+    }
+    raf = requestAnimationFrame(frame);
+  }
+  function play() {
+    if (t >= DURATION) t = 0;
+    playing = true; last = performance.now();
+    cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(frame);
+    ui();
+  }
+  function pause() { playing = false; cancelAnimationFrame(raf); ui(); }
+  function toggle() { if (t >= DURATION) play(); else if (playing) pause(); else play(); }
+  function seek(clientX) {
+    var rc = track.getBoundingClientRect();
+    t = clamp((clientX - rc.left) / rc.width, 0, 1) * DURATION;
+    render(t); ui();
+  }
+
+  playBtn.addEventListener('click', function (e) { e.stopPropagation(); toggle(); });
+  canvas.addEventListener('click', toggle);
+  track.addEventListener('click', function (e) { e.stopPropagation(); seek(e.clientX); });
+  loopBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    looping = !looping;
+    loopBtn.setAttribute('aria-pressed', looping ? 'true' : 'false');
+  });
+  function fullscreen() {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else if (player.requestFullscreen) player.requestFullscreen();
+  }
+  document.getElementById('fs').addEventListener('click', function (e) { e.stopPropagation(); fullscreen(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === ' ' || e.key === 'k') { e.preventDefault(); toggle(); }
+    else if (e.key === 'f') fullscreen();
+    else if (e.key === 'ArrowRight') { t = Math.min(DURATION, t + 0.25); render(t); ui(); }
+    else if (e.key === 'ArrowLeft') { t = Math.max(0, t - 0.25); render(t); ui(); }
+  });
+
+  window.__render = render; window.__stop = function () { playing = false; cancelAnimationFrame(raf); };
+
+  render(0); ui();
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) { t = 4.4; render(t); ui(); }
+  else play();
+})();
+</script>
+</body>
+</html>
