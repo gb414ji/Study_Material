@@ -1,0 +1,887 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>SSO explained — cinematic ASCII flow diagram</title>
+<style>
+  :root { box-sizing: border-box; --page:#0b0b0d; --ink:#eceef2; --muted:#8b909a; --line:#23252b; --chip:#17181c; --red:#ff3030; --ice:#6fd7ff; }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body { background: var(--page); color: var(--ink); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; line-height: 1.5; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 16px 48px; }
+
+  .player { position: relative; width: 100%; aspect-ratio: 16 / 9; background: #000; border-radius: 10px; overflow: hidden; cursor: pointer; user-select: none; }
+  .player:fullscreen { border-radius: 0; }
+  canvas { display: block; width: 100%; height: 100%; }
+  .bar { position: absolute; left: 0; right: 0; bottom: 0; padding: 28px 14px 10px; background: linear-gradient(to top, rgba(0,0,0,.8), rgba(0,0,0,0)); color: #fff; opacity: 0; transition: opacity .2s; }
+  .player:hover .bar, .player:focus-within .bar, .player.ended .bar, .player.paused .bar { opacity: 1; }
+  .track { position: relative; height: 4px; background: rgba(255,255,255,.28); border-radius: 2px; cursor: pointer; margin-bottom: 10px; }
+  .track:hover { height: 6px; margin-top: -1px; margin-bottom: 9px; }
+  .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: var(--red); border-radius: 2px; }
+  .tick { position: absolute; top: 0; bottom: 0; width: 2px; background: rgba(0,0,0,.75); }
+  .knob { position: absolute; top: 50%; left: 0; width: 13px; height: 13px; border-radius: 50%; background: var(--red); transform: translate(-50%, -50%); }
+  .row { display: flex; align-items: center; gap: 12px; font-size: 13px; font-variant-numeric: tabular-nums; }
+  .grow { flex: 1; }
+  .now { opacity: .85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 40%; }
+  button.ctl { background: none; border: 0; color: #fff; padding: 4px 6px; cursor: pointer; display: inline-flex; align-items: center; border-radius: 6px; font: inherit; }
+  button.ctl:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+  button.ctl svg { width: 24px; height: 24px; fill: currentColor; }
+  button.loop { opacity: .6; font-size: 13px; }
+  button.loop[aria-pressed="true"] { opacity: 1; color: var(--red); }
+  .hd { font-size: 11px; font-weight: 700; padding: 1px 5px; border-radius: 4px; background: var(--red); color: #fff; }
+
+  h1 { font-size: clamp(20px, 3vw, 26px); margin: 18px 0 4px; font-weight: 600; letter-spacing: -.01em; }
+  .sub { color: var(--muted); font-size: 14px; margin: 0 0 14px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip { background: var(--chip); border: 1px solid var(--line); border-radius: 999px; padding: 4px 12px; font-size: 13px; color: var(--ink); font-family: inherit; }
+  button.chip { cursor: pointer; }
+  button.chip:hover { border-color: #3a3d45; }
+  button.chip.on { border-color: var(--red); color: #fff; }
+  button.chip:focus-visible { outline: 2px solid var(--ice); outline-offset: 2px; }
+  .chip b { color: var(--red); font-weight: 600; }
+  h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 22px 0 8px; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="player paused" id="player" tabindex="0" aria-label="SSO explained: cinematic ASCII flow diagram">
+    <canvas id="c" width="1920" height="1080"></canvas>
+    <div class="bar">
+      <div class="track" id="track" role="slider" aria-label="Seek" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+        <div class="fill" id="fill"></div><div id="ticks"></div><div class="knob" id="knob"></div>
+      </div>
+      <div class="row">
+        <button class="ctl" id="play" aria-label="Play or pause"></button>
+        <span id="time">0:00 / 0:00</span>
+        <span class="now" id="now"></span>
+        <span class="grow"></span>
+        <button class="ctl loop" id="loop" aria-pressed="false" aria-label="Loop">Loop</button>
+        <span class="hd">1080p</span>
+        <button class="ctl" id="fs" aria-label="Fullscreen">
+          <svg viewBox="0 0 24 24"><path d="M4 4h6v2H6v4H4V4zm10 0h6v6h-2V6h-4V4zM4 14h2v4h4v2H4v-6zm14 0h2v6h-6v-2h4v-4z"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <h1>SSO explained — cinematic ASCII flow diagram</h1>
+  <p class="sub">Single Sign-On from the password problem to SAML, OAuth 2.0, OpenID Connect, Kerberos, sessions, logout, security and provisioning. Space plays or pauses, arrow keys jump 5 seconds, F is fullscreen.</p>
+  <div class="chips">
+    <span class="chip"><b>1920 × 1080</b> canvas</span>
+    <span class="chip"><b>16:9</b> frame, 2.39:1 letterbox</span>
+    <span class="chip"><b id="runtime">--</b> runtime</span>
+  </div>
+  <h2>Chapters</h2>
+  <div class="chips" id="chapters"></div>
+</div>
+
+<script>
+(function () {
+  var W = 1920, H = 1080, CW = 15, CH = 24, COLS = W / CW, ROWS = H / CH;   // 128 x 45 grid
+  var BAR = 138;
+  var canvas = document.getElementById('c');
+  var ctx = canvas.getContext('2d');
+  var player = document.getElementById('player');
+  var fam = 'ui-monospace, Menlo, Consolas, "DejaVu Sans Mono", "Courier New", monospace';
+
+  /* ---------------- helpers ---------------- */
+  function hash(a, b, c) {
+    var h = (a * 374761393 + b * 668265263 + (c || 0) * 2147483647) | 0;
+    h = (h ^ (h >>> 13)) * 1274126177 | 0; h = h ^ (h >>> 16);
+    return (h >>> 0) / 4294967295;
+  }
+  function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
+  function lerp(a, b, k) { return a + (b - a) * k; }
+  function easeOut(x) { x = clamp(x, 0, 1); return 1 - Math.pow(1 - x, 3); }
+  function rgba(r, g, b, a) { return 'rgba(' + (r | 0) + ',' + (g | 0) + ',' + (b | 0) + ',' + clamp(a, 0, 1).toFixed(3) + ')'; }
+  function pad(s, n) { while (s.length < n) s += ' '; return s; }
+
+  /* ---------------- palette + text buffer ---------------- */
+  var DIM = 0, WH = 1, ICE = 2, AMB = 3, RED = 4, MINT = 5, VIO = 6;
+  var PAL = [[112, 128, 150], [236, 240, 247], [111, 215, 255], [255, 190, 82], [255, 68, 68], [102, 240, 182], [178, 148, 255]];
+  var CS = PAL.map(function (p) { var a = []; for (var q = 0; q <= 20; q++) a.push(rgba(p[0], p[1], p[2], q / 20)); return a; });
+  var GLOW = PAL.map(function (p) { return rgba(p[0], p[1], p[2], 0.85); });
+
+  var N = COLS * ROWS, Bc = new Array(N), Bk = new Uint8Array(N), Ba = new Float32Array(N), Bg = new Uint8Array(N);
+  function clearBuf() { for (var i = 0; i < N; i++) Bc[i] = ''; }
+  function put(c, r, ch, col, a, g) {
+    if (c < 0 || c >= COLS || r < 0 || r >= ROWS || ch === ' ' || ch === '') return;
+    var i = r * COLS + c; Bc[i] = ch; Bk[i] = col; Ba[i] = a === undefined ? 1 : a; Bg[i] = g ? 1 : 0;
+  }
+  function text(c, r, s, col, a, g) { for (var i = 0; i < s.length; i++) put(c + i, r, s.charAt(i), col, a, g); }
+  function textC(cc, r, s, col, a, g) { text(Math.round(cc - s.length / 2), r, s, col, a, g); }
+  function typed(c, r, s, t, speed, col, a, g) {
+    if (t < 0) return false;
+    var n = clamp(Math.floor(t * speed), 0, s.length);
+    text(c, r, s.substring(0, n), col, a, g);
+    if (n < s.length && (a === undefined || a > 0.3)) put(c + n, r, '_', col, a);
+    return n >= s.length;
+  }
+  function typedC(cc, r, s, t, speed, col, a, g) { return typed(Math.round(cc - s.length / 2), r, s, t, speed, col, a, g); }
+  function segs(c, r, parts, t, speed, a) {           // typed, several colours
+    if (t < 0) return;
+    var n = Math.floor(t * speed), x = c;
+    for (var i = 0; i < parts.length; i++) {
+      var s = parts[i][0], k = clamp(n, 0, s.length);
+      text(x, r, s.substring(0, k), parts[i][1], a); n -= s.length; x += s.length;
+      if (n <= 0) break;
+    }
+  }
+  function hl(c1, c2, r, ch, col, a) { for (var c = c1; c <= c2; c++) put(c, r, ch, col, a); }
+  function vl(c, r1, r2, ch, col, a) { for (var r = r1; r <= r2; r++) put(c, r, ch, col, a); }
+
+  function rect(c, r, w, h, col, prog, a, g) {
+    if (prog <= 0) return;
+    a = a === undefined ? 1 : a;
+    var per = 2 * (w + h) - 4, n = Math.floor(clamp(prog, 0, 1) * per + (prog >= 1 ? 1 : 0)), i = 0, x, y;
+    for (x = 0; x < w; x++) { if (i++ < n) put(c + x, r, (x === 0 || x === w - 1) ? '+' : '-', col, a, g); }
+    for (y = 1; y < h; y++) { if (i++ < n) put(c + w - 1, r + y, y === h - 1 ? '+' : '|', col, a, g); }
+    for (x = w - 2; x >= 0; x--) { if (i++ < n) put(c + x, r + h - 1, x === 0 ? '+' : '-', col, a, g); }
+    for (y = h - 2; y >= 1; y--) { if (i++ < n) put(c, r + y, '|', col, a, g); }
+  }
+
+  function pathCells(pts) {
+    var cells = [], k, i;
+    for (k = 0; k < pts.length - 1; k++) {
+      var a = pts[k], b = pts[k + 1], dc = Math.sign(b[0] - a[0]), dr = Math.sign(b[1] - a[1]);
+      var n = Math.max(Math.abs(b[0] - a[0]), Math.abs(b[1] - a[1]));
+      for (i = (k === 0 ? 0 : 1); i <= n; i++)
+        cells.push({ c: a[0] + dc * i, r: a[1] + dr * i, ch: dc !== 0 ? '-' : '|', corner: (i === n && k < pts.length - 2) });
+    }
+    var last = pts[pts.length - 1], prev = pts[pts.length - 2];
+    var dc2 = Math.sign(last[0] - prev[0]), dr2 = Math.sign(last[1] - prev[1]);
+    cells[cells.length - 1].head = dc2 > 0 ? '>' : dc2 < 0 ? '<' : dr2 > 0 ? 'v' : '^';
+    return cells;
+  }
+  function drawPath(cells, prog, col, a, dash) {
+    var n = Math.floor(clamp(prog, 0, 1) * cells.length + (prog >= 1 ? 1 : 0));
+    for (var i = 0; i < n && i < cells.length; i++) {
+      var q = cells[i], ch = q.corner ? '+' : q.ch;
+      if (i === cells.length - 1 && q.head) ch = q.head;
+      if (dash && i % 2 && i !== cells.length - 1) continue;
+      put(q.c, q.r, ch, col, a);
+    }
+  }
+  function packet(cells, p, col, a) {
+    var i = Math.floor(clamp(p, 0, 1) * (cells.length - 1));
+    put(cells[i].c, cells[i].r, '@', col, a === undefined ? 1 : a, 1);
+    for (var k = 1; k <= 4; k++) { var j = i - k; if (j < 0) break; put(cells[j].c, cells[j].r, k < 3 ? '*' : '.', col, (a === undefined ? 1 : a) * (1 - k * 0.2), 1); }
+  }
+  function stick(c, r, frame, col, a, up) {
+    put(c + 1, r, 'O', col, a, 1);
+    if (up) { put(c, r, '\\', col, a); put(c + 2, r, '/', col, a); put(c + 1, r + 1, '|', col, a); }
+    else { put(c, r + 1, '/', col, a); put(c + 1, r + 1, '|', col, a); put(c + 2, r + 1, '\\', col, a); }
+    put(c + 1, r + 2, '|', col, a);
+    if (frame === 0) { put(c, r + 3, '/', col, a); put(c + 2, r + 3, '\\', col, a); } else { put(c + 1, r + 3, '|', col, a); }
+  }
+  function caption(str, t, a) {
+    var lines = str.split('\n'), n = Math.floor(Math.max(0, t) * 90), used = 0;
+    lines.forEach(function (L, i) {
+      var k = clamp(n - used, 0, L.length); used += L.length;
+      if (k > 0) text(Math.round(64 - L.length / 2), 34 + i, L.substring(0, k), WH, 0.95 * (a === undefined ? 1 : a));
+    });
+  }
+  function capList(list, t) {
+    var cur = null;
+    for (var i = 0; i < list.length; i++) if (t >= list[i][0]) cur = list[i];
+    if (cur) caption(cur[1], t - cur[0]);
+  }
+
+  /* ---------------- big ASCII letters (sampled from a font) ---------------- */
+  var bigCache = {};
+  function getBig(str, wCols) {
+    var key = str + '|' + wCols; if (bigCache[key]) return bigCache[key];
+    var OS = 4, sq = CW / CH, cv = document.createElement('canvas'), x = cv.getContext('2d');
+    x.font = 'bold 100px ' + fam;
+    var tw = x.measureText(str).width, fsz = 100 * (wCols * OS) / tw;
+    var hRows = Math.ceil(fsz * 0.95 * sq / OS) + 2;
+    cv.width = wCols * OS; cv.height = hRows * OS;
+    x = cv.getContext('2d');
+    x.font = 'bold ' + fsz + 'px ' + fam; x.textAlign = 'center';
+    var tw2 = x.measureText(str).width;
+    x.setTransform(1, 0, 0, sq, 0, 0); x.fillStyle = '#fff';
+    x.fillText(str, wCols * OS / 2, (hRows * OS / 2) / sq + fsz * 0.72 / 2);
+    var d = x.getImageData(0, 0, cv.width, cv.height).data, cells = [], minR = 999, maxR = 0;
+    var sx = wCols * OS / 2 - tw2 / 2, adv = tw2 / str.length;
+    for (var r = 0; r < hRows; r++) for (var c = 0; c < wCols; c++) {
+      var sum = 0;
+      for (var yy = 0; yy < OS; yy++) for (var xx = 0; xx < OS; xx++) sum += d[(((r * OS + yy) * cv.width) + (c * OS + xx)) * 4 + 3];
+      var cov = sum / (255 * OS * OS);
+      if (cov > 0.32) {
+        var li = clamp(Math.floor((c * OS + OS / 2 - sx) / adv), 0, str.length - 1);
+        cells.push({ c: c, r: r, cov: cov, li: li, rev: 0.08 + Math.abs(c - wCols / 2) / (wCols / 2) * 0.7 + hash(c, r, 5) * 0.15 });
+        if (r < minR) minR = r; if (r > maxR) maxR = r;
+      }
+    }
+    return (bigCache[key] = { w: wCols, h: hRows, cells: cells, minR: minR, maxR: maxR });
+  }
+  function fchar(cov) { return cov > 0.85 ? '@' : cov > 0.68 ? '#' : cov > 0.5 ? '%' : '*'; }
+  function dchar(p) { return p < 0.25 ? '.' : p < 0.5 ? ':' : p < 0.75 ? '+' : '*'; }
+  function drawBig(big, c0, r0, lt, colFn, a) {
+    for (var i = 0; i < big.cells.length; i++) {
+      var q = big.cells[i], dev = (lt - q.rev) / 0.42;
+      if (dev < 0) continue;
+      put(c0 + q.c, r0 + q.r, dev < 1 ? dchar(dev) : fchar(q.cov), colFn(q), a * (0.3 + 0.7 * Math.min(1, dev)), dev < 1 ? 1 : 0);
+    }
+  }
+
+  /* ---------------- sequence diagrams ---------------- */
+  function drawLanes(lanes, y0, rEnd, laneT, ct, A) {
+    lanes.forEach(function (L, i) {
+      var w = L.name.length + 4, c0 = L.c - Math.floor(w / 2);
+      var p = clamp((ct - laneT - i * 0.12) / 0.5, 0, 1);
+      rect(c0, y0, w, 3, L.col, p, A);
+      if (p >= 1) text(c0 + 2, y0 + 1, L.name, L.col, A);
+      for (var r = y0 + 3; r <= rEnd; r++) if (r % 2 === 0) put(L.c, r, ':', DIM, 0.4 * p * A);
+    });
+  }
+  function sequence(cfg, ct) {
+    var lanes = cfg.lanes, A = cfg.a === undefined ? 1 : cfg.a, cur = -1;
+    var rEnd = cfg.r0 + cfg.msgs.length * cfg.rstep;
+    if (!cfg.noLanes) drawLanes(lanes, cfg.y0, rEnd, cfg.t0 - 0.9, ct, A);
+    cfg.msgs.forEach(function (m, i) {
+      var s = cfg.t0 + i * cfg.step;
+      if (ct < s) return;
+      cur = i;
+    });
+    cfg.msgs.forEach(function (m, i) {
+      var s = cfg.t0 + i * cfg.step;
+      if (ct < s) return;
+      var r = cfg.r0 + i * cfg.rstep, fc = lanes[m.f].c, tc = lanes[m.t].c, dir = Math.sign(tc - fc);
+      var a0 = fc + dir, a1 = tc - dir, len = Math.abs(a1 - a0) + 1;
+      var p = clamp((ct - s) / 0.55, 0, 1), n = Math.floor(p * len + (p >= 1 ? 1 : 0));
+      var col = m.col === undefined ? ICE : m.col, al = (i === cur ? 1 : 0.72) * A;
+      for (var k = 0; k < n && k < len; k++) {
+        var ch = (k === len - 1 && p >= 1) ? (dir > 0 ? '>' : '<') : (m.ch || '-');
+        put(a0 + dir * k, r, ch, col, al);
+      }
+      if (p < 1) put(a0 + dir * Math.floor(p * (len - 1)), r, '@', col, A, 1);
+      else if (i === cur) put(a1, r, dir > 0 ? '>' : '<', col, A, 1);
+      var lab = '(' + (i + 1) + ') ' + m.label;
+      typed(Math.round((fc + tc) / 2 - lab.length / 2), r - 1, lab, ct - s, 70, i === cur ? WH : DIM, (i === cur ? 1 : 0.85) * A);
+    });
+    if (cur >= 0 && cfg.caps !== false && cfg.msgs[cur].cap) caption(cfg.msgs[cur].cap, ct - (cfg.t0 + cur * cfg.step), A);
+    return cur;
+  }
+
+  /* ---------------- scenes ---------------- */
+  function sIntro(lt) {
+    if (lt > 0.5) segs(54, 12, [['thesudo', WH], ['LAB', RED], ['  presents', DIM]], lt - 0.5, 26, 1);
+    var big = getBig('SSO', 58), r0 = Math.round(20 - (big.minR + big.maxR) / 2);
+    drawBig(big, Math.round(64 - big.w / 2), r0, lt - 0.7, function (q) { return q.li === 2 ? RED : WH; }, 1);
+    var rb = r0 + big.maxR + 3;
+    typedC(64, rb, 'S I N G L E   S I G N - O N', lt - 2.9, 34, ICE, 1, 1);
+    typedC(64, rb + 2, 'One login. Every app. The complete visual guide.', lt - 3.8, 45, WH, 0.9);
+    typedC(64, rb + 4, 'SAML  /  OAuth 2.0  /  OpenID Connect  /  Kerberos', lt - 5.0, 45, DIM, 0.9);
+  }
+
+  function sProblem(ct) {
+    var names = ['MAIL', 'CRM', 'GIT', 'HR PORTAL', 'WIKI', 'CLOUD', 'CHAT', 'PAYROLL'];
+    var pws = ['Summer24!', 'Summer24!', 'P@ssw0rd', 'Welcome1', 'qwerty123', 'Summer24!', 'letmein', 'Spring25!'];
+    var reuse = [1, 1, 0, 0, 0, 1, 0, 0];
+    var solved = clamp((ct - 6.1) / 0.8, 0, 1), ok = solved > 0.5, bus = ok ? MINT : DIM;
+    var ux = ct < 1 ? Math.round(lerp(-6, 10, easeOut(ct))) : 10;
+    stick(ux, 17, ct < 1 ? Math.floor(ct * 7) % 2 : 0, WH, 1, ok);
+    if (ct > 1) textC(11.5, 22, ok ? 'ONE LOGIN' : 'YOU', ok ? MINT : WH, 1);
+    if (ct > 1) hl(15, 39, 19, '-', bus, 0.6);
+    var trunk = Math.floor(clamp((ct - 1) / 2.4, 0, 1) * 22);
+    vl(40, 10, 10 + trunk, '|', bus, 0.6);
+    for (var i = 0; i < 8; i++) {
+      var r = 9 + i * 3, st = 1.0 + i * 0.3, p = clamp((ct - st) / 0.4, 0, 1);
+      if (p > 0) hl(41, 45, r + 1, '-', bus, 0.6);
+      rect(46, r, 34, 3, ok ? MINT : AMB, p, 1);
+      if (p >= 1) {
+        text(48, r + 1, pad(names[i], 9), WH, 1);
+        if (ok) text(59, r + 1, 'via SSO   [ OK ]', MINT, 1);
+        else {
+          var done = typed(59, r + 1, 'pw: ' + pws[i], ct - st - 0.4, 28, reuse[i] ? RED : WH, 1);
+          if (done && reuse[i]) text(73, r + 1, 'REUSED', RED, 0.6 + 0.4 * Math.sin(ct * 6), 1);
+        }
+      }
+    }
+    var pa = 1 - solved, bl = ['! 8 APPS = 8 PASSWORDS', '! WEAK + REUSED = BREACH RISK', '! RESETS FLOOD THE HELPDESK', '! LEAVERS KEEP FORGOTTEN ACCESS'];
+    if (ct > 3.4 && pa > 0) {
+      typed(88, 9, 'THE SYMPTOMS', ct - 3.4, 30, DIM, pa);
+      bl.forEach(function (b, k) { typed(88, 12 + k * 3, b, ct - (3.8 + k * 0.7), 40, RED, pa, 1); });
+    }
+    var sl = ['1 IDENTITY  -> 1 LOGIN', '1 POLICY    -> MFA EVERYWHERE', '1 SWITCH    -> INSTANT OFFBOARD'];
+    if (ct > 6.2) {
+      typed(88, 9, 'WITH SSO', ct - 6.2, 30, MINT, solved, 1);
+      sl.forEach(function (b, k) { typed(88, 12 + k * 3, b, ct - (6.5 + k * 0.6), 40, MINT, solved, 1); });
+    }
+    capList([[0.3, 'You use dozens of apps. Every one wants its own username and password.'],
+      [3.6, 'Result: weak and reused passwords, reset tickets, and access nobody remembers to revoke.'],
+      [6.0, 'SSO: prove who you are ONCE to a trusted Identity Provider. Every app trusts that proof.']], ct);
+  }
+
+  function sConcepts(ct) {
+    var p1 = clamp((ct - 0.3) / 0.7, 0, 1), p2 = clamp((ct - 1.4) / 0.7, 0, 1), p3 = clamp((ct - 2.6) / 0.7, 0, 1);
+    rect(44, 10, 40, 7, ICE, p1);
+    if (p1 >= 1) {
+      textC(64, 11, 'IDENTITY PROVIDER (IdP)', ICE, 1, 1);
+      typed(47, 13, 'Authenticates the user', ct - 1.0, 40, WH);
+      typed(47, 14, 'Issues signed tokens / assertions', ct - 1.4, 40, WH);
+      typed(47, 15, 'Okta / Entra ID / Keycloak / Google', ct - 1.8, 40, DIM);
+    }
+    rect(6, 21, 34, 9, VIO, p2);
+    if (p2 >= 1) {
+      textC(23, 22, 'USER / PRINCIPAL', VIO, 1, 1);
+      stick(22, 24, Math.floor(ct * 2) % 2, WH, 1, false);
+      typed(9, 28, 'browser + password / MFA', ct - 2.2, 40, DIM);
+    }
+    rect(88, 21, 34, 9, AMB, p3);
+    if (p3 >= 1) {
+      textC(105, 22, 'SERVICE PROVIDER (SP)', AMB, 1, 1);
+      typed(91, 24, 'a.k.a. RELYING PARTY (RP)', ct - 3.2, 40, WH);
+      typed(91, 26, "Trusts the IdP's tokens", ct - 3.5, 40, WH);
+      typed(91, 27, 'Mail / CRM / Git / your app', ct - 3.8, 40, DIM);
+    }
+    var pu = pathCells([[23, 20], [23, 13], [43, 13]]), ps = pathCells([[105, 20], [105, 13], [84, 13]]), pa = pathCells([[41, 25], [87, 25]]);
+    drawPath(pu, (ct - 3.9) / 0.7, VIO, 0.9); drawPath(ps, (ct - 4.5) / 0.7, AMB, 0.9, true); drawPath(pa, (ct - 5.1) / 0.7, WH, 0.9);
+    if (ct > 4.3) typed(26, 12, 'AUTHENTICATES', ct - 4.3, 30, VIO);
+    if (ct > 4.9) typed(88, 12, 'TRUSTS: metadata + keys', ct - 4.9, 30, AMB);
+    if (ct > 5.4) typed(56, 24, 'USES THE APP', ct - 5.4, 30, WH);
+    if (ct > 6.3) { var k = (ct - 6.3) * 0.45; packet(pu, k % 1, VIO); packet(pa, (k + 0.3) % 1, WH); packet(ps, (k + 0.6) % 1, AMB); }
+    if (ct > 5.6) typed(6, 31, 'AUTHENTICATION = who are you?', ct - 5.6, 40, ICE, 1);
+    if (ct > 6.4) typed(50, 31, 'AUTHORIZATION = what may you do?', ct - 6.4, 40, ICE, 1);
+    if (ct > 7.3) typed(6, 32, 'FEDERATION = trust that spans organizations      SESSION = a remembered login (cookie)', ct - 7.3, 60, DIM, 1);
+    capList([[0.3, 'Three actors. The IdP proves who you are. The SP is the app you want to use.'],
+      [3.9, 'The user authenticates at the IdP. The SP never sees the password, it only trusts the IdP.'],
+      [6.2, 'Trust is set up in advance: the SP knows the IdP, its URLs and its public keys.']], ct);
+  }
+
+  var FLOW_LANES = [{ c: 14, name: 'BROWSER', col: VIO }, { c: 48, name: 'APP A (SP)', col: AMB }, { c: 82, name: 'IDENTITY PROVIDER', col: ICE }, { c: 112, name: 'APP B (SP)', col: AMB }];
+  var FLOW1 = [
+    { f: 0, t: 1, label: 'GET /dashboard', cap: '1  You open App A. It has no session for you yet.' },
+    { f: 1, t: 0, label: '302 redirect to IdP', cap: '2  App A asks for no password. It redirects your browser to the IdP.' },
+    { f: 0, t: 2, label: 'auth request', cap: '3  The browser arrives at the IdP with a request that names the app.' },
+    { f: 2, t: 0, label: 'login page + MFA', cap: '4  The IdP has no session for you either, so it challenges you: password, MFA or passkey.' },
+    { f: 0, t: 2, label: 'credentials + MFA', cap: '5  You prove your identity ONCE, here and nowhere else.' },
+    { f: 2, t: 0, label: 'signed token + IdP cookie', ch: '=', col: MINT, cap: '6  The IdP starts its SSO session (a cookie) and issues a signed token for App A.' },
+    { f: 0, t: 1, label: 'token (redirect / POST)', ch: '=', col: MINT, cap: '7  The browser carries the token back to App A.' },
+    { f: 1, t: 0, label: '200 OK + app session', cap: '8  App A verifies the signature, trusts it, and opens its own session. You are in.' }];
+  var FLOW2 = [
+    { f: 0, t: 3, label: 'GET /reports', cap: 'Now open App B. A different app, but the same IdP.' },
+    { f: 3, t: 0, label: '302 redirect to IdP', cap: 'App B also redirects you to the IdP.' },
+    { f: 0, t: 2, label: 'request + IdP cookie', col: AMB, cap: 'The browser sends the IdP session cookie automatically.' },
+    { f: 2, t: 0, label: 'token for App B (no login)', ch: '=', col: MINT, cap: 'The IdP recognizes you, skips the login and issues a token for App B. This is the SSO moment.' },
+    { f: 0, t: 3, label: 'token', ch: '=', col: MINT, cap: 'App B trusts the token. No password. No prompt.' }];
+  function sFlow(ct) {
+    drawLanes(FLOW_LANES, 9, 28, -0.6, ct, 1);
+    var a1 = ct < 7.2 ? 1 : clamp(1 - (ct - 7.2) / 0.4, 0, 1);
+    if (a1 > 0) sequence({ lanes: FLOW_LANES, noLanes: true, msgs: FLOW1, t0: 0.5, step: 0.85, r0: 14, rstep: 2, a: a1 }, ct);
+    if (ct > 0.4 && a1 > 0) typedC(64, 12, 'PHASE 1  -  FIRST LOGIN', ct - 0.4, 40, AMB, a1, 1);
+    if (ct >= 7.7) {
+      var a2 = clamp((ct - 7.7) / 0.3, 0, 1);
+      typedC(64, 12, 'PHASE 2  -  SILENT SSO', ct - 7.7, 40, MINT, a2, 1);
+      sequence({ lanes: FLOW_LANES, noLanes: true, msgs: FLOW2, t0: 8.1, step: 0.85, r0: 14, rstep: 2, a: a2 }, ct);
+    }
+    if (ct > 12.5) {
+      typedC(64, 28, 'SP-INITIATED: start at the app          IdP-INITIATED: start at the IdP portal tile', ct - 12.5, 60, ICE, 1);
+    }
+  }
+
+  function sTokens(ct) {
+    var p = clamp((ct - 0.3) / 0.6, 0, 1);
+    rect(5, 10, 24, 9, ICE, p); rect(99, 10, 24, 9, AMB, p); rect(33, 10, 62, 10, WH, p, 0.8);
+    if (p >= 1) {
+      textC(17, 11, 'IdP', ICE, 1, 1); text(8, 13, 'holds the PRIVATE key', WH); text(8, 15, 'o--+  K-priv', ICE, 1, 1); text(8, 16, '   |=  signs tokens', DIM);
+      textC(111, 11, 'SP / RP', AMB, 1, 1); text(102, 13, 'holds the PUBLIC key', WH); text(102, 15, 'o--+  K-pub', AMB, 1, 1); text(102, 16, '   |=  verifies', DIM);
+      textC(64, 11, 'SIGNED TOKEN', WH, 1, 1);
+      var f = [['iss', 'https://idp.corp.com', '<- who issued it'], ['sub', 'alice@corp.com', '<- who the user is'], ['aud', 'crm.example.com', '<- who it is FOR'],
+        ['exp', '10:05:00Z', '<- short lifetime'], ['claims', 'name, email, groups', '<- attributes'], ['sig', '3f9a1c...e07b', '<- RSA / ECDSA signature']];
+      f.forEach(function (x, i) {
+        var t = ct - (1.0 + i * 0.55);
+        typed(36, 13 + i, pad(x[0], 7) + '= ' + x[1], t, 50, i === 5 ? MINT : WH, 1);
+        if (t > 0.6) typed(68, 13 + i, x[2], t - 0.6, 40, DIM, 1);
+      });
+    }
+    if (ct > 4.4) {
+      var path = pathCells([[17, 19], [17, 22], [111, 22], [111, 19]]);
+      drawPath(path, (ct - 4.4) / 1.6, MINT, 0.5);
+      if (ct < 6.2) packet(path, (ct - 4.4) / 1.6, MINT);
+      typedC(64, 21, 'signed token travels via the browser', ct - 4.6, 40, MINT, 1);
+    }
+    if (ct > 2.5) {
+      typed(6, 24, 'TRUST SETUP (ONE TIME)', ct - 2.5, 40, ICE, 1, 1);
+      ['1 exchange metadata: entityID, URLs', '2 exchange certificates / JWKS keys', '3 agree on claims, rotate keys'].forEach(function (s, i) { typed(6, 26 + i * 1, s, ct - (3.0 + i * 0.5), 45, WH, 1); });
+    }
+    if (ct > 6.2) {
+      typed(66, 24, 'EVERY LOGIN, THE SP CHECKS', ct - 6.2, 40, ICE, 1, 1);
+      ['signature is valid', 'issuer is trusted', 'audience is me', 'not expired', 'nonce / no replay'].forEach(function (s, i) {
+        var t = ct - (6.5 + i * 0.4);
+        if (t > 0) typed(66, 25 + i, '[x] ' + s, t, 40, MINT, 1);
+      });
+    }
+    capList([[0.4, 'Everything rests on trust. The IdP signs a token with its private key. Nobody can forge it.'],
+      [3.0, 'Setup happens once: the SP stores the IdP metadata and public keys. Keys are rotated over time.'],
+      [6.3, 'On every login the SP validates the token before it grants access.']], ct);
+  }
+
+  function xmlCols(s) {
+    var cols = [], inTag = false, inQ = false;
+    for (var i = 0; i < s.length; i++) {
+      var ch = s.charAt(i);
+      if (ch === '<') { inTag = true; cols.push(ICE); }
+      else if (ch === '>') { cols.push(ICE); inTag = false; inQ = false; }
+      else if (inTag) { if (ch === '"') { inQ = !inQ; cols.push(AMB); } else cols.push(inQ ? AMB : ICE); }
+      else cols.push(WH);
+    }
+    return cols;
+  }
+  var SAML_LANES = [{ c: 14, name: 'BROWSER', col: VIO }, { c: 60, name: 'SP (APP)', col: AMB }, { c: 106, name: 'IdP', col: ICE }];
+  var SAML_MSGS = [
+    { f: 0, t: 1, label: 'GET /protected', cap: '1  The user requests a protected page on the Service Provider.' },
+    { f: 1, t: 0, label: '302 + AuthnRequest', cap: '2  The SP sends an AuthnRequest, a small XML message, inside the redirect (HTTP-Redirect binding).' },
+    { f: 0, t: 2, label: 'AuthnRequest', cap: '3  The browser delivers the request to the IdP single sign-on URL.' },
+    { f: 2, t: 0, label: 'login form + MFA', cap: '4  The IdP authenticates the user, unless a session already exists.' },
+    { f: 0, t: 2, label: 'credentials', cap: '5  The user signs in at the IdP.' },
+    { f: 2, t: 0, label: 'SAMLResponse (signed assertion)', ch: '=', col: MINT, cap: '6  The IdP returns an auto-submitting HTML form holding the signed SAML Assertion.' },
+    { f: 0, t: 1, label: 'POST /acs  SAMLResponse', ch: '=', col: MINT, cap: '7  The browser POSTs it to the SP Assertion Consumer Service URL (HTTP-POST binding).' },
+    { f: 1, t: 0, label: 'signature ok -> session', cap: '8  The SP checks signature, audience and time window, then creates a session.' }];
+  var XML = ['<saml:Assertion ID="_a75ad3" IssueInstant="10:00:03Z">', '  <saml:Issuer>https://idp.corp.com</saml:Issuer>', '  <ds:Signature> RSA-SHA256 ... </ds:Signature>',
+    '  <saml:Subject>', '    <saml:NameID>alice@corp.com</saml:NameID>', '  </saml:Subject>', '  <saml:Conditions NotOnOrAfter="10:05:03Z">',
+    '    <saml:Audience>https://sp.example.com</saml:Audience>', '  </saml:Conditions>', '  <saml:AuthnStatement AuthnContext="MFA"/>',
+    '  <saml:AttributeStatement>', '    email=alice@corp.com  groups=admin', '  </saml:AttributeStatement>', '</saml:Assertion>'];
+  function sSaml(ct) {
+    var a1 = ct < 7.4 ? 1 : clamp(1 - (ct - 7.4) / 0.4, 0, 1);
+    if (a1 > 0) sequence({ lanes: SAML_LANES, msgs: SAML_MSGS, t0: 0.6, step: 0.8, y0: 9, r0: 14, rstep: 2, a: a1 }, ct);
+    if (ct >= 7.9) {
+      var a = clamp((ct - 7.9) / 0.4, 0, 1);
+      rect(6, 10, 72, 19, ICE, clamp((ct - 7.9) / 0.6, 0, 1), a);
+      textC(42, 11, 'SAML ASSERTION (XML)', ICE, a, 1);
+      XML.forEach(function (L, i) {
+        var t = ct - (8.4 + i * 0.28), n = clamp(Math.floor(t * 90), 0, L.length);
+        if (t < 0) return;
+        var cols = xmlCols(L);
+        for (var k = 0; k < n; k++) put(8 + k, 13 + i, L.charAt(k), cols[k], a);
+      });
+      var C = [['ASSERTION', AMB, 'signed XML claim about a user'], ['', DIM, 'authn / attribute / authz decision'], ['BINDINGS', AMB, 'how messages travel'], ['', DIM, 'HTTP-Redirect | HTTP-POST | Artifact'],
+        ['PROFILE', AMB, 'Web Browser SSO'], ['METADATA', AMB, 'entityID + ACS URL + certificates'], ['NAMEID', AMB, 'stable identifier for the user'], ['PROTOCOLS', AMB, 'AuthnRequest / Response / LogoutRequest']];
+      typed(82, 10, 'SAML CONCEPTS', ct - 8.2, 30, ICE, a, 1);
+      C.forEach(function (x, i) {
+        var t = ct - (8.8 + i * 0.5);
+        if (x[0]) typed(82, 12 + i * 2, x[0], t, 40, x[1], a, 1);
+        var row = x[0] ? 12 + i * 2 : 12 + i * 2 - 0;
+        if (x[0]) typed(82, row + 1, x[2], t - 0.2, 45, WH, a);
+        else typed(82, 12 + i * 2 - 1, '', 0, 1, WH, a);
+      });
+    }
+    if (ct >= 7.9) capList([[7.9, 'The heart of SAML is the Assertion: signed XML stating who the user is and how they signed in.'],
+      [11.6, 'SAML 2.0 is the enterprise standard for browser SSO: rich attributes, mature, XML heavy.']], ct);
+  }
+
+  var OA_LANES = [{ c: 10, name: 'USER', col: VIO }, { c: 42, name: 'CLIENT', col: AMB }, { c: 80, name: 'AUTH SERVER', col: ICE }, { c: 114, name: 'API', col: MINT }];
+  var OA_MSGS = [
+    { f: 0, t: 1, label: 'click "Connect"', cap: '1  The user asks the Client app to access their data.' },
+    { f: 1, t: 2, label: '/authorize client_id scope state code_challenge', cap: '2  The Client redirects to the Authorization Server, with PKCE code_challenge and a random state.' },
+    { f: 2, t: 0, label: 'login + consent screen', cap: '3  The user authenticates and sees exactly which scopes are requested.' },
+    { f: 0, t: 2, label: 'approve scopes', cap: '4  The user consents. This is the delegation.' },
+    { f: 2, t: 1, label: 'redirect: code + state', col: AMB, cap: '5  A short-lived authorization code returns to the Client via the browser. It is not a token yet.' },
+    { f: 1, t: 2, label: 'POST /token code + code_verifier', cap: '6  The Client swaps the code for tokens on the back channel, proving itself with the PKCE verifier.' },
+    { f: 2, t: 1, label: 'access_token + refresh_token', ch: '=', col: MINT, cap: '7  Tokens are issued: a short-lived access token and a longer-lived refresh token.' },
+    { f: 1, t: 3, label: 'Authorization: Bearer <token>', ch: '=', col: MINT, cap: '8  The Client calls the API with the access token.' },
+    { f: 3, t: 1, label: 'protected data', cap: '9  The API checks the token and scopes, then returns only what was allowed.' }];
+  function sOauth(ct) {
+    var aA = ct < 3.3 ? 1 : clamp(1 - (ct - 3.3) / 0.4, 0, 1);
+    if (aA > 0) {
+      var R = [['RESOURCE OWNER', 'you, the user', VIO], ['CLIENT', 'the app asking access', AMB], ['AUTH SERVER', 'issues the tokens', ICE], ['RESOURCE SERVER', 'the API with your data', MINT]];
+      R.forEach(function (x, i) {
+        var p = clamp((ct - 0.3 - i * 0.35) / 0.5, 0, 1), c = 6 + i * 31;
+        rect(c, 11, 27, 7, x[2], p, aA);
+        if (p >= 1) { textC(c + 13, 13, x[0], x[2], aA, 1); textC(c + 13, 15, x[1], WH, aA); }
+        if (i < 3 && p >= 1) text(c + 28, 14, '-->', DIM, aA);
+      });
+      typedC(64, 21, 'OAuth 2.0 = DELEGATED AUTHORIZATION', ct - 1.8, 40, WH, aA, 1);
+      typedC(64, 23, 'A valet key: the app gets limited access without ever seeing your password.', ct - 2.2, 60, DIM, aA);
+      typedC(64, 25, 'On its own it is NOT a login protocol. OpenID Connect adds identity on top.', ct - 2.6, 60, AMB, aA);
+      capList([[0.3, 'OAuth 2.0 answers a different question: may this app act on my behalf, and for what?']], ct);
+    }
+    var aB = ct < 3.8 ? 0 : (ct < 11.0 ? clamp((ct - 3.8) / 0.4, 0, 1) : clamp(1 - (ct - 11.0) / 0.4, 0, 1));
+    if (aB > 0) sequence({ lanes: OA_LANES, msgs: OA_MSGS, t0: 4.3, step: 0.72, y0: 9, r0: 14, rstep: 2, a: aB, laneT: 3.4 }, ct);
+    if (ct >= 11.5) {
+      var a = clamp((ct - 11.5) / 0.4, 0, 1);
+      rect(8, 10, 112, 21, ICE, clamp((ct - 11.5) / 0.6, 0, 1), a);
+      typedC(64, 11, 'GRANT TYPES AND TOKENS', ct - 11.7, 40, ICE, a, 1);
+      var G = [['AUTHORIZATION CODE + PKCE', 'web apps, SPAs, mobile', 'RECOMMENDED', MINT], ['CLIENT CREDENTIALS', 'machine to machine, no user', '', WH], ['DEVICE CODE', 'TVs, consoles, CLI tools', '', WH],
+        ['REFRESH TOKEN', 'renew access without a new login', '', WH], ['IMPLICIT / PASSWORD', 'deprecated, do not use', 'DEPRECATED', RED]];
+      G.forEach(function (x, i) {
+        var t = ct - (12.0 + i * 0.35);
+        typed(11, 13 + i, pad(x[0], 28), t, 60, x[3], a, i === 0);
+        typed(40, 13 + i, x[1], t - 0.1, 60, DIM, a); if (x[2]) typed(100, 13 + i, x[2], t - 0.3, 40, x[3], a, 1);
+      });
+      var T = [['ACCESS TOKEN', 'short-lived key for the API (minutes)'], ['REFRESH TOKEN', 'long-lived, rotated on every use'], ['SCOPES', 'read:mail  write:calendar ... least privilege'], ['STATE + PKCE', 'block CSRF and authorization code theft']];
+      T.forEach(function (x, i) {
+        var t = ct - (13.8 + i * 0.3);
+        typed(11, 20 + i * 2, pad(x[0], 15), t, 60, AMB, a, 1); typed(28, 20 + i * 2, x[1], t - 0.1, 60, WH, a);
+      });
+      capList([[11.5, 'Pick the grant for the client type. Authorization Code with PKCE is the modern default.']], ct);
+    }
+  }
+
+  function sOidc(ct) {
+    var L = [['OPENID CONNECT', 'who you are', ICE], ['OAUTH 2.0', 'what you may access', AMB], ['HTTPS / TLS', 'secure transport', DIM]];
+    L.forEach(function (x, i) {
+      var p = clamp((ct - 0.4 - i * 0.4) / 0.5, 0, 1);
+      rect(6, 10 + i * 4, 38, 4, x[2], p);
+      if (p >= 1) { text(9, 11 + i * 4, x[0], x[2], 1, 1); text(9, 12 + i * 4, x[1], WH); }
+    });
+    if (ct > 1.8) {
+      typed(6, 23, 'ENDPOINTS', ct - 1.8, 40, ICE, 1, 1);
+      ['/authorize          login + consent', '/token              code -> tokens', '/userinfo           profile claims', '/jwks.json          public signing keys', '/.well-known/openid-configuration'].forEach(function (s, i) { typed(6, 24 + i, s, ct - (2.1 + i * 0.35), 50, WH, 0.95); });
+      typed(6, 30, 'scope=openid profile email', ct - 4.2, 45, MINT, 1);
+    }
+    if (ct > 1.2) {
+      typed(50, 10, 'ID TOKEN  =  JWT  (three parts joined by dots)', ct - 1.2, 50, WH, 1, 1);
+      var jw = ['eyJhbGciOiJSUzI1NiIsImtpZCI6ImsxIn0', 'eyJpc3MiOiJodHRwczovL2lkcC5jb3JwIiwic3ViIjoiYWxpY2UiLCJhdWQiOiJjcm0ifQ', 'MEUCIQDx8vQ3kLmPz0aB9cYw7RtE1uHf'];
+      var jc = [RED, VIO, ICE];
+      jw.forEach(function (s, i) { typed(50, 11 + i, s + (i < 2 ? ' .' : ''), ct - (1.8 + i * 0.8), 110, jc[i], 1); });
+    }
+    var pH = clamp((ct - 4.6) / 0.5, 0, 1), pS = clamp((ct - 5.9) / 0.5, 0, 1), pP = clamp((ct - 5.2) / 0.5, 0, 1);
+    rect(50, 15, 36, 5, RED, pH); rect(88, 15, 34, 5, ICE, pS); rect(50, 21, 72, 10, VIO, pP);
+    if (pH >= 1) { text(52, 16, 'HEADER', RED, 1, 1); typed(52, 17, '{ "alg": "RS256", "kid": "k1" }', ct - 5.0, 45, WH); }
+    if (pS >= 1) { text(90, 16, 'SIGNATURE', ICE, 1, 1); typed(90, 17, 'RS256(header.payload, priv)', ct - 6.3, 45, WH); }
+    if (pP >= 1) {
+      text(52, 22, 'PAYLOAD  (CLAIMS)', VIO, 1, 1);
+      [['iss', 'https://idp.corp.com', 'issuer'], ['sub', '248289761001', 'user id'], ['aud', 'crm-app', 'intended client'], ['exp', '1760000000', 'expires'], ['nonce', 'n-0S6_WzA2', 'anti-replay'], ['email', 'alice@corp.com', 'profile claim']].forEach(function (x, i) {
+        var t = ct - (5.7 + i * 0.35);
+        typed(52, 24 + i, pad(x[0], 6) + ': ' + pad(x[1], 24), t, 60, WH);
+        if (t > 0.5) typed(86, 24 + i, x[2], t - 0.5, 40, DIM);
+      });
+    }
+    capList([[0.4, 'OpenID Connect is a thin identity layer on top of OAuth 2.0. Same flows, plus proof of who logged in.'],
+      [4.6, 'The ID Token is a signed JWT. The client checks signature, issuer, audience, expiry and nonce.'],
+      [7.6, 'Discovery + JWKS let apps configure themselves. OIDC is the modern default for web, SPA and mobile.']], ct);
+  }
+
+  var KB_LANES = [{ c: 14, name: 'CLIENT', col: VIO }, { c: 62, name: 'KDC (AS + TGS)', col: ICE }, { c: 108, name: 'SERVICE', col: AMB }];
+  var KB_MSGS = [
+    { f: 0, t: 1, label: 'AS-REQ  "I am alice"', cap: '1  At login the client asks the Authentication Server for a ticket. The password never travels.' },
+    { f: 1, t: 0, label: 'AS-REP  TGT', ch: '=', col: MINT, cap: '2  It receives a Ticket-Granting Ticket (TGT), sealed with the KDC secret.' },
+    { f: 0, t: 1, label: 'TGS-REQ  TGT + service name', cap: '3  For each service the client presents the TGT to the Ticket-Granting Service.' },
+    { f: 1, t: 0, label: 'TGS-REP  service ticket', ch: '=', col: MINT, cap: '4  It receives a service ticket, valid only for that service.' },
+    { f: 0, t: 2, label: 'AP-REQ  ticket + authenticator', cap: '5  The client presents the ticket to the service.' },
+    { f: 2, t: 0, label: 'AP-REP  access granted', cap: '6  The service accepts it, and can prove itself back (mutual authentication).' }];
+  function sKerb(ct) {
+    var aA = ct < 7.4 ? 1 : clamp(1 - (ct - 7.4) / 0.4, 0, 1);
+    if (aA > 0) {
+      sequence({ lanes: KB_LANES, msgs: KB_MSGS, t0: 0.5, step: 0.95, y0: 9, r0: 14, rstep: 2, a: aA }, ct);
+      if (ct > 6.2) typedC(64, 28, 'TICKETS + SHARED SECRETS  /  CLOCKS MUST MATCH (~5 MIN)  /  ACTIVE DIRECTORY DOMAIN SSO', ct - 6.2, 60, ICE, aA);
+    }
+    if (ct >= 7.9) {
+      var a = clamp((ct - 7.9) / 0.4, 0, 1);
+      typedC(64, 9, 'OTHER SSO FLAVORS', ct - 7.9, 40, ICE, a, 1);
+      var C = [['CAS', 'Central Authentication Service', 'ticket redirect + /serviceValidate', 'popular in universities', WH], ['WS-FEDERATION', 'Microsoft passive profile', 'SAML tokens over XML / SOAP', 'legacy ADFS setups', VIO],
+        ['LDAP / AD', 'the identity directory', 'a bind checks the password', 'backs many IdPs', AMB], ['SOCIAL LOGIN', 'Google / GitHub as the IdP', 'OIDC / OAuth 2.0 underneath', 'consumer apps', MINT],
+        ['REVERSE PROXY', 'header-based SSO', 'proxy authenticates, injects headers', 'legacy apps, no code changes', ICE], ['PASSWORD VAULT', 'agent fills in credentials', 'not true federation', 'last resort for old apps', RED]];
+      C.forEach(function (x, i) {
+        var c = 6 + (i % 3) * 39, r = 11 + Math.floor(i / 3) * 10, st = 8.3 + i * 0.4, p = clamp((ct - st) / 0.5, 0, 1);
+        rect(c, r, 37, 8, x[4], p, a);
+        if (p >= 1) { text(c + 2, r + 1, x[0], x[4], a, 1); typed(c + 2, r + 3, x[1], ct - st - 0.5, 45, WH, a); typed(c + 2, r + 4, x[2], ct - st - 0.7, 45, DIM, a); typed(c + 2, r + 6, x[3], ct - st - 0.9, 45, x[4], a); }
+      });
+      capList([[7.9, 'SAML, OAuth and OIDC dominate the web. Kerberos, CAS and WS-Fed are still common inside organizations.']], ct);
+    }
+  }
+
+  function sTable(ct) {
+    var cols = [[8, 'PROTOCOL'], [20, 'PURPOSE'], [36, 'TOKEN'], [56, 'TRANSPORT'], [82, 'BEST FOR']];
+    var rows = [[['SAML 2.0', AMB], 'AuthN + attributes', 'XML assertion', 'browser redirect / POST', 'Enterprise SaaS, B2B'],
+      [['OIDC', MINT], 'AuthN', 'JWT ID token', 'HTTPS + REST', 'Web, SPA, mobile login'],
+      [['OAuth 2.0', ICE], 'AuthZ (delegation)', 'access token', 'HTTPS + REST', 'API access on your behalf'],
+      [['Kerberos', VIO], 'AuthN', 'binary tickets', 'UDP / TCP port 88', 'On-prem AD, intranet'],
+      [['CAS', WH], 'AuthN', 'service ticket', 'redirect + validate', 'Universities, legacy web'],
+      [['WS-Fed', DIM], 'AuthN', 'SAML token in XML', 'browser + SOAP', 'Legacy Microsoft ADFS']];
+    cols.forEach(function (c) { typed(c[0], 11, c[1], ct - 0.3, 40, ICE, 1, 1); });
+    if (ct > 0.6) hl(8, 119, 12, '=', DIM, 0.6 * clamp((ct - 0.6) / 0.5, 0, 1));
+    rows.forEach(function (r, i) {
+      var t = ct - (1.0 + i * 0.55), y = 14 + i * 2;
+      typed(8, y, r[0][0], t, 40, r[0][1], 1, 1);
+      typed(20, y, r[1], t - 0.1, 50, WH); typed(36, y, r[2], t - 0.2, 50, WH); typed(56, y, r[3], t - 0.3, 50, WH); typed(82, y, r[4], t - 0.4, 50, DIM);
+    });
+    if (ct > 4.6) {
+      typed(8, 27, 'WHICH ONE?', ct - 4.6, 40, ICE, 1, 1);
+      [['Enterprise web apps / B2B', '->  SAML 2.0  or  OIDC'], ['Mobile, SPA, new apps', '->  OIDC + PKCE'], ['Calling APIs for a user', '->  OAuth 2.0 access tokens'], ['Windows domain, intranet', '->  Kerberos']].forEach(function (x, i) {
+        var t = ct - (5.0 + i * 0.5);
+        typed(8 + (i % 2) * 58, 29 + Math.floor(i / 2) * 2, pad(x[0], 27) + x[1], t, 60, i % 2 ? AMB : MINT, 1);
+      });
+    }
+    capList([[0.4, 'Same goal, different plumbing. OIDC and SAML authenticate. OAuth 2.0 authorizes. Kerberos lives in the LAN.']], ct);
+  }
+
+  function sSessions(ct) {
+    typed(6, 9, 'SESSIONS AND LIFETIMES', ct - 0.3, 40, ICE, 1, 1);
+    var B = [['IdP SESSION', 26, '8 hours', ICE], ['APP A SESSION', 16, '30 min idle', AMB], ['APP B SESSION', 12, '30 min idle', AMB], ['ACCESS TOKEN', 5, '5-15 minutes', MINT], ['REFRESH TOKEN', 24, 'days, rotating', VIO]];
+    var LO = 6.0;
+    B.forEach(function (b, i) {
+      var r = 12 + i * 3, st = 0.8 + i * 0.4, p = clamp((ct - st) / 2.2, 0, 1), n = Math.floor(p * b[1]);
+      typed(6, r, b[0], ct - st, 40, WH, 1);
+      for (var k = 0; k < b[1]; k++) {
+        var ch = k < n ? '=' : '.', col = k < n ? b[3] : DIM;
+        if (ct > LO + k * 0.03 && (i < 3 || i === 4)) { ch = 'x'; col = RED; }
+        put(26 + k, r, ch, col, k < n ? 1 : 0.35);
+      }
+      if (p >= 1) text(54, r, b[2], DIM, 1);
+    });
+    var pI = clamp((ct - 1.0) / 0.6, 0, 1);
+    rect(88, 10, 23, 4, ICE, pI); if (pI >= 1) textC(99, 11, 'IdP', ICE, 1, 1), textC(99, 12, '(SSO session)', DIM, 1);
+    [['APP A', 76, 14], ['APP B', 93, 14], ['APP C', 110, 12]].forEach(function (x, i) {
+      var p = clamp((ct - 1.4 - i * 0.2) / 0.5, 0, 1);
+      rect(x[1], 22, x[2], 3, AMB, p); if (p >= 1) textC(x[1] + x[2] / 2, 23, x[0], AMB, 1);
+    });
+    if (ct > LO - 0.5) {
+      var pa = pathCells([[82, 21], [82, 11], [87, 11]]), pb = pathCells([[99, 14], [99, 21]]), pc = pathCells([[105, 14], [105, 18], [115, 18], [115, 21]]);
+      var t1 = (ct - (LO - 0.5)) / 0.8, t2 = (ct - (LO + 0.3)) / 0.8;
+      drawPath(pa, t1, RED, 0.9); drawPath(pb, t2, RED, 0.9); drawPath(pc, t2, RED, 0.9, true);
+      if (t1 < 1) packet(pa, t1, RED); if (t2 > 0 && t2 < 1) { packet(pb, t2, RED); packet(pc, t2, RED); }
+      typed(76, 9, '1 USER LOGS OUT HERE', ct - (LO - 0.5), 40, RED, 1, 1);
+      if (ct > LO + 0.3) typed(93, 17, '', 0, 1, RED); 
+      if (ct > LO + 0.3) typed(80, 19, '2 IdP TELLS THE OTHERS', ct - LO - 0.3, 40, RED, 1, 1);
+    }
+    if (ct > 3.6) {
+      typed(6, 28, 'FRONT-CHANNEL: browser loads each app logout URL (iframes / redirects)', ct - 3.6, 70, WH);
+      typed(6, 29, 'BACK-CHANNEL : IdP POSTs a signed logout token server to server (reliable)', ct - 4.5, 70, WH);
+      typed(6, 31, 'SLO GAP: apps that ignore it stay signed in until their own session expires', ct - 5.4, 70, AMB);
+    }
+    capList([[0.4, 'Login creates layers of sessions: the IdP session, each app session, and short-lived tokens.'],
+      [4.0, 'Tokens expire fast and refresh tokens renew them. This limits damage if something leaks.'],
+      [6.0, 'Single Logout ends the IdP session and tells every app. It is hard to make reliable everywhere.']], ct);
+  }
+
+  function sSecurity(ct) {
+    var I = [['TOKEN THEFT / REPLAY', 'short expiry + nonce + TLS + audience check'], ['CSRF ON THE CALLBACK', 'state parameter, verified on return'], ['AUTH CODE INTERCEPTION', 'PKCE: the code_verifier proves the caller'],
+      ['FORGED / WRAPPED SAML', 'strict signature + schema validation'], ['PHISHING, CREDENTIAL STUFFING', 'MFA + passkeys (FIDO2 / WebAuthn)'], ['REDIRECT_URI TAMPERING', 'exact-match, allow-listed redirect URIs'],
+      ['IdP DOWN = EVERYONE LOCKED OUT', 'high availability + break-glass admin']];
+    I.forEach(function (x, i) {
+      var t = ct - (0.5 + i * 0.85);
+      typed(6, 10 + i * 3, '! ' + x[0], t, 50, RED, 1, 1);
+      typed(6, 11 + i * 3, '  + ' + x[1], t - 0.35, 60, MINT, 1);
+    });
+    var sh = ['   ___________', '  /  _______  \\', ' |  |  SSO  |  |', ' |  |_______|  |', '  \\   [MFA]   /', '   \\ PASSKEY /', "    '._____.'"];
+    var ps = clamp((ct - 1.0) / 0.8, 0, 1);
+    sh.forEach(function (L, i) { for (var k = 0; k < L.length; k++) { var ch = L.charAt(k); if (i === 2 && k > 5 && k < 9) put(96 + k, 10 + i, ch, WH, ps, 1); else put(96 + k, 10 + i, ch, ICE, ps * (0.8 + 0.2 * Math.sin(ct * 3)), 1); } });
+    if (ct > 2.5) {
+      typed(92, 19, 'AUTH STRENGTH', ct - 2.5, 40, ICE, 1, 1);
+      [['PASSWORD', 1, RED], ['SMS OTP', 2, AMB], ['TOTP APP', 3, AMB], ['PUSH', 4, MINT], ['PASSKEY', 5, MINT]].forEach(function (b, i) {
+        var t = ct - (2.8 + i * 0.5), n = Math.floor(clamp(t * 6, 0, b[1]));
+        if (t < 0) return;
+        text(92, 21 + i * 2, pad(b[0], 9), WH, 1); text(102, 21 + i * 2, '#####'.substring(0, n), b[2], 1, 1); text(102 + n, 21 + i * 2, '.....'.substring(0, 5 - n), DIM, 0.4);
+      });
+    }
+    capList([[0.4, 'SSO concentrates risk in one place, so it must be hardened. Each attack has a standard defense.'],
+      [6.2, 'Phishing-resistant MFA is the biggest win: passkeys can never be typed into a fake site.']], ct);
+  }
+
+  function sEco(ct) {
+    var p0 = clamp((ct - 0.3) / 0.5, 0, 1), p1 = clamp((ct - 0.8) / 0.6, 0, 1), p2 = clamp((ct - 1.4) / 0.5, 0, 1);
+    rect(46, 9, 36, 4, VIO, p0);
+    if (p0 >= 1) { textC(64, 10, 'SOCIAL / PARTNER IdPs', VIO, 1, 1); textC(64, 11, 'Google  GitHub  Partner Org', WH); }
+    rect(46, 16, 36, 8, ICE, p1);
+    if (p1 >= 1) { textC(64, 17, 'YOUR IDENTITY PROVIDER', ICE, 1, 1); textC(64, 19, 'MFA / policies / audit', WH); textC(64, 20, 'RBAC: groups -> roles -> claims', WH); textC(64, 21, 'JIT provisioning at first login', WH); textC(64, 22, 'sessions + tokens', DIM); }
+    rect(5, 16, 28, 8, AMB, p2);
+    if (p2 >= 1) { textC(19, 17, 'DIRECTORY', AMB, 1, 1); textC(19, 19, 'LDAP / Active Directory', WH); textC(19, 21, 'HR = source of truth', DIM); }
+    [['MAIL', 10], ['CRM', 18], ['GIT', 26]].forEach(function (x, i) {
+      var p = clamp((ct - 2.0 - i * 0.25) / 0.5, 0, 1);
+      rect(96, x[1], 26, 3, MINT, p); if (p >= 1) textC(109, x[1] + 1, 'APP: ' + x[0], MINT, 1);
+    });
+    var dir = pathCells([[33, 20], [45, 20]]), soc = pathCells([[64, 13], [64, 15]]);
+    var tok = [[10], [18], [26]].map(function (x) { return pathCells([[83, 20], [90, 20], [90, x[0] + 1], [95, x[0] + 1]]); });
+    drawPath(dir, (ct - 3.0) / 0.5, AMB, 0.9); drawPath(soc, (ct - 3.3) / 0.4, VIO, 0.9);
+    tok.forEach(function (c, i) { drawPath(c, (ct - 3.6 - i * 0.2) / 0.6, MINT, 0.9); });
+    if (ct > 3.3) { text(35, 19, 'sync', AMB); text(66, 14, 'federated login', VIO); text(84, 17, 'SSO tokens', MINT); }
+    if (ct > 4.6) {
+      var k = (ct - 4.6) * 0.5;
+      packet(dir, k % 1, AMB); packet(soc, (k + 0.4) % 1, VIO); tok.forEach(function (c, i) { packet(c, (k + i * 0.25) % 1, MINT); });
+    }
+    if (ct > 5.4) {
+      typed(6, 27, 'BENEFITS', ct - 5.4, 40, MINT, 1, 1);
+      ['+ fewer passwords', '+ central MFA + policy', '+ instant offboarding', '+ one audit trail'].forEach(function (s, i) { typed(6, 28 + i, s, ct - (5.7 + i * 0.35), 40, MINT, 1); });
+      typed(56, 27, 'RISKS', ct - 5.4, 40, RED, 1, 1);
+      ['- IdP = single point of failure', '- high-value attack target', '- legacy apps need connectors', '- migration effort'].forEach(function (s, i) { typed(56, 28 + i, s, ct - (5.7 + i * 0.35), 40, RED, 1); });
+    }
+    if (ct > 8.3) typedC(64, 32, 'FEDERATION = trust across orgs  /  JIT = create at first login  /  SCIM = auto provision + deprovision', ct - 8.3, 70, ICE, 1);
+    capList([[0.4, 'Around the IdP: a directory feeds it, apps trust it, and other IdPs can be federated in.'],
+      [5.4, 'SCIM automates accounts. Groups become roles via claims. Weigh the benefits against the concentration of risk.']], ct);
+  }
+
+  function sOutro(lt) {
+    var R = [['SSO', 'authenticate once, trust everywhere', WH], ['SAML 2.0', 'enterprise web SSO, signed XML assertions', AMB], ['OIDC', 'modern login on OAuth 2.0, JWT ID tokens', MINT],
+      ['OAUTH 2.0', 'delegated API access, access + refresh tokens', ICE], ['KERBEROS', 'ticket-based SSO inside a domain', VIO], ['SLO + MFA + SCIM', 'log out, secure and provision the full lifecycle', RED]];
+    R.forEach(function (x, i) { var t = lt - (0.4 + i * 0.55); typed(20, 10 + i * 2, pad(x[0], 18), t, 40, x[2], 1, 1); typed(38, 10 + i * 2, x[1], t - 0.15, 60, WH, 0.95); });
+    if (lt > 3.9) {
+      var path = pathCells([[16, 24], [112, 24]]);
+      drawPath(path, (lt - 3.9) / 1.0, MINT, 0.6);
+      text(6, 24, '[ YOU ]', VIO, 1, 1); text(114, 24, '[ APPS ]', AMB, 1, 1);
+      textC(64, 23, 'login once  ->  IdP  ->  signed token  ->  every app', WH, clamp((lt - 4.3) / 0.6, 0, 1));
+      if (lt > 4.9) { var k = (lt - 4.9) * 0.6; packet(path, k % 1, MINT); packet(path, (k + 0.5) % 1, MINT); }
+    }
+    if (lt > 5.4) {
+      var big = getBig('THESUDOLAB', 84), r0 = Math.round(30 - (big.minR + big.maxR) / 2);
+      drawBig(big, Math.round(64 - big.w / 2), r0, lt - 5.4, function (q) { return q.li >= 7 ? RED : WH; }, 1);
+    }
+  }
+
+  /* ---------------- scene table ---------------- */
+  var SCENES = [
+    { chip: 'Intro', dur: 6.5, draw: sIntro, tint: [110, 140, 220] },
+    { ch: 1, chip: 'Password problem', title: 'THE PASSWORD|PROBLEM', sub: 'why sso exists', dur: 8.3, draw: sProblem, tint: [255, 60, 50] },
+    { ch: 2, chip: 'Core concepts', title: 'CORE|CONCEPTS', sub: 'user, idp, sp, trust', dur: 9.3, draw: sConcepts, tint: [110, 140, 220] },
+    { ch: 3, chip: 'How SSO works', title: 'HOW SSO|WORKS', sub: 'first login and silent sso', dur: 13.4, draw: sFlow, tint: [110, 140, 220] },
+    { ch: 4, chip: 'Tokens & trust', title: 'TOKENS AND|TRUST', sub: 'signatures, claims, validation', dur: 9.4, draw: sTokens, tint: [110, 140, 220] },
+    { ch: 5, chip: 'SAML 2.0', title: 'SAML 2.0', sub: 'enterprise browser sso', dur: 13.6, draw: sSaml, tint: [255, 190, 82] },
+    { ch: 6, chip: 'OAuth 2.0', title: 'OAUTH 2.0', sub: 'delegated authorization', dur: 15.4, draw: sOauth, tint: [111, 215, 255] },
+    { ch: 7, chip: 'OpenID Connect', title: 'OPENID|CONNECT', sub: 'identity on top of oauth', dur: 10.3, draw: sOidc, tint: [102, 240, 182] },
+    { ch: 8, chip: 'Kerberos & friends', title: 'KERBEROS|AND FRIENDS', sub: 'tickets, cas, ws-fed, ldap', dur: 12.4, draw: sKerb, tint: [178, 148, 255] },
+    { ch: 9, chip: 'Comparison', title: 'PROTOCOL|SHOWDOWN', sub: 'which one to use', dur: 8.8, draw: sTable, tint: [110, 140, 220] },
+    { ch: 10, chip: 'Sessions & logout', title: 'SESSIONS AND|LOGOUT', sub: 'lifetimes and single logout', dur: 9.6, draw: sSessions, tint: [255, 80, 70] },
+    { ch: 11, chip: 'Security', title: 'SECURITY', sub: 'threats and defenses', dur: 10.4, draw: sSecurity, tint: [255, 60, 50] },
+    { ch: 12, chip: 'Ecosystem', title: 'THE SSO|ECOSYSTEM', sub: 'federation, scim, rbac', dur: 11.0, draw: sEco, tint: [110, 140, 220] },
+    { chip: 'Recap', dur: 9.0, draw: sOutro, tint: [255, 60, 50], outro: true }
+  ];
+  var acc = 0;
+  SCENES.forEach(function (s) { s.card = s.ch ? 1.9 : 0; s.total = s.card + s.dur; s.start = acc; acc += s.total; });
+  var DURATION = acc;
+
+  function drawCard(s, lt) {
+    var lines = s.title.split('|'), bigs = lines.map(function (L) { return getBig(L, Math.round(L.length * 8.6)); });
+    var total = 0; bigs.forEach(function (b) { total += b.maxR - b.minR + 1; }); total += (bigs.length - 1) * 2;
+    var top = Math.round(21 - total / 2), a = clamp((s.card - lt) / 0.35, 0, 1);
+    segs(Math.round(64 - 8), top - 4, [['CHAPTER ', DIM], [(s.ch < 10 ? '0' : '') + s.ch, RED], [' / 12', DIM]], lt - 0.05, 40, a);
+    var y = top;
+    bigs.forEach(function (b, i) {
+      drawBig(b, Math.round(64 - b.w / 2), y - b.minR, lt - 0.15 - i * 0.2, function () { return WH; }, a);
+      y += b.maxR - b.minR + 3;
+    });
+    typedC(64, y, s.sub.toUpperCase().split('').join(' '), lt - 0.9, 40, ICE, a, 1);
+    return top + total / 2;
+  }
+  function chrome(s, ct) {
+    text(6, 7, (s.ch < 10 ? '0' : '') + s.ch + '/12', ICE, 1, 1);
+    text(12, 7, s.title.replace('|', ' '), WH, 1);
+    text(13 + s.title.length, 7, '- ' + s.sub, DIM, 0.9);
+    for (var i = 1; i <= 12; i++) put(100 + (i - 1) * 2, 7, i < s.ch ? '#' : i === s.ch ? '@' : '.', i === s.ch ? RED : (i < s.ch ? ICE : DIM), i === s.ch ? 1 : 0.6, i === s.ch);
+    hl(6, 121, 8, '-', DIM, 0.25);
+    hl(6, 121, 33, '.', DIM, 0.25);
+  }
+  function watermark(a) { text(108, 37, 'thesudo', WH, 0.5 * a); text(115, 37, 'LAB', RED, 0.7 * a); }
+
+  var vig = ctx.createRadialGradient(W / 2, H / 2, H * 0.28, W / 2, H / 2, H * 1.05);
+  vig.addColorStop(0, 'rgba(0,0,0,0)'); vig.addColorStop(1, 'rgba(0,0,0,0.78)');
+
+  /* ---------------- frame ---------------- */
+  var curScene = 0;
+  function sceneAt(t) { for (var i = SCENES.length - 1; i >= 0; i--) if (t >= SCENES[i].start) return i; return 0; }
+  function render(t) {
+    var si = sceneAt(t), s = SCENES[si], lt = t - s.start, ct = lt - s.card, fr = Math.floor(t * 24);
+    curScene = si;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1; ctx.shadowBlur = 0; ctx.globalCompositeOperation = 'source-over';
+    ctx.fillStyle = '#050506'; ctx.fillRect(0, 0, W, H);
+
+    var fade = Math.min(clamp(lt / 0.35, 0, 1), s.outro ? 1 : clamp((s.total - lt) / 0.35, 0, 1));
+    var push = 1 + 0.035 * (lt / s.total);
+    ctx.save();
+    ctx.translate(W / 2, H / 2); ctx.scale(push, push); ctx.translate(-W / 2, -H / 2);
+
+    var tn = s.tint, bg = ctx.createRadialGradient(W / 2, H * 0.5, 20, W / 2, H * 0.5, 1000);
+    bg.addColorStop(0, rgba(tn[0], tn[1], tn[2], 0.09 * fade)); bg.addColorStop(1, rgba(tn[0], tn[1], tn[2], 0));
+    ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H); ctx.globalCompositeOperation = 'source-over';
+
+    clearBuf();
+    var midRow = 21;
+    if (s.card && lt < s.card) midRow = drawCard(s, lt);
+    else { if (s.ch) chrome(s, ct); s.draw(s.card ? ct : lt, s); }
+    watermark(1);
+
+    ctx.font = 'bold 22px ' + fam; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    for (var i = 0; i < N; i++) {
+      var ch = Bc[i]; if (ch === '') continue;
+      var a = Ba[i] * fade; if (a < 0.03) continue;
+      var x = (i % COLS) * CW + CW / 2, y = ((i / COLS) | 0) * CH + CH / 2;
+      if (Bg[i]) { ctx.shadowColor = GLOW[Bk[i]]; ctx.shadowBlur = 9; } else if (ctx.shadowBlur) ctx.shadowBlur = 0;
+      ctx.fillStyle = CS[Bk[i]][Math.min(20, Math.round(a * 20))];
+      ctx.fillText(ch, x, y);
+    }
+    ctx.shadowBlur = 0;
+
+    if (s.card && lt < 0.9) {                                        // anamorphic streak on chapter cards
+      var sw = W * easeOut(lt / 0.5), sa = 1 - clamp((lt - 0.4) / 0.5, 0, 1), yy = midRow * CH;
+      var sg = ctx.createLinearGradient(W / 2 - sw / 2, 0, W / 2 + sw / 2, 0);
+      sg.addColorStop(0, 'rgba(190,215,255,0)'); sg.addColorStop(0.5, rgba(215, 232, 255, sa)); sg.addColorStop(1, 'rgba(190,215,255,0)');
+      ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = sg; ctx.fillRect(W / 2 - sw / 2, yy - 1.5, sw, 3); ctx.globalCompositeOperation = 'source-over';
+    }
+    ctx.restore();
+
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.fillStyle = vig; ctx.fillRect(0, 0, W, H);
+    for (var g = 0; g < 500; g++) { ctx.fillStyle = rgba(255, 255, 255, 0.03 + hash(g, fr, 13) * 0.06); ctx.fillRect(hash(g, fr, 11) * W, hash(g, fr, 12) * H, 2, 2); }
+    if (hash(fr, 77, 5) < 0.06) { ctx.fillStyle = 'rgba(255,255,255,0.06)'; ctx.fillRect(hash(fr, 78, 5) * W, 0, 1, H); }
+    var bh = BAR * easeOut(t / 0.7);
+    ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, bh); ctx.fillRect(0, H - bh, W, bh);
+    if (t > DURATION - 0.8) { ctx.fillStyle = rgba(0, 0, 0, (t - (DURATION - 0.8)) / 0.8); ctx.fillRect(0, 0, W, H); }
+  }
+
+  /* ---------------- player ---------------- */
+  var playBtn = document.getElementById('play'), timeEl = document.getElementById('time'), nowEl = document.getElementById('now');
+  var fill = document.getElementById('fill'), knob = document.getElementById('knob'), track = document.getElementById('track');
+  var loopBtn = document.getElementById('loop'), chapEl = document.getElementById('chapters');
+  var ICON_PLAY = '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>';
+  var ICON_PAUSE = '<svg viewBox="0 0 24 24"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>';
+  var ICON_REPLAY = '<svg viewBox="0 0 24 24"><path d="M12 5V2L7 6.5 12 11V8a5 5 0 1 1-5 5H5a7 7 0 1 0 7-8z"/></svg>';
+  function mmss(s) { s = Math.floor(s); return Math.floor(s / 60) + ':' + (s % 60 < 10 ? '0' : '') + (s % 60); }
+  document.getElementById('runtime').textContent = mmss(DURATION);
+  var ticks = document.getElementById('ticks');
+  SCENES.forEach(function (s, i) {
+    if (i > 0) { var d = document.createElement('div'); d.className = 'tick'; d.style.left = (s.start / DURATION * 100) + '%'; ticks.appendChild(d); }
+    var b = document.createElement('button'); b.className = 'chip'; b.textContent = (s.ch ? (s.ch < 10 ? '0' : '') + s.ch + '  ' : '') + s.chip;
+    b.addEventListener('click', function () { t = s.start + 0.01; render(t); if (!playing) play(); else ui(); });
+    chapEl.appendChild(b); s.btn = b;
+  });
+
+  var t = 0, playing = false, last = 0, raf = 0, looping = false;
+  function ui() {
+    var p = t / DURATION;
+    fill.style.width = (p * 100) + '%'; knob.style.left = (p * 100) + '%';
+    timeEl.textContent = mmss(t) + ' / ' + mmss(DURATION);
+    track.setAttribute('aria-valuenow', (p * 100).toFixed(0));
+    var ended = t >= DURATION;
+    player.classList.toggle('ended', ended); player.classList.toggle('paused', !playing && !ended);
+    playBtn.innerHTML = ended ? ICON_REPLAY : (playing ? ICON_PAUSE : ICON_PLAY);
+    var si = sceneAt(Math.min(t, DURATION - 0.01));
+    nowEl.textContent = SCENES[si].chip;
+    SCENES.forEach(function (s, i) { s.btn.classList.toggle('on', i === si); });
+  }
+  function frame(now) {
+    if (!playing) return;
+    t = Math.min(DURATION, t + (now - last) / 1000); last = now;
+    render(t); ui();
+    if (t >= DURATION) { playing = false; if (looping) { play(); return; } ui(); return; }
+    raf = requestAnimationFrame(frame);
+  }
+  function play() { if (t >= DURATION) t = 0; playing = true; last = performance.now(); cancelAnimationFrame(raf); raf = requestAnimationFrame(frame); ui(); }
+  function pause() { playing = false; cancelAnimationFrame(raf); ui(); }
+  function toggle() { if (t >= DURATION) play(); else if (playing) pause(); else play(); }
+  function seekTo(v) { t = clamp(v, 0, DURATION); render(t); ui(); }
+
+  playBtn.addEventListener('click', function (e) { e.stopPropagation(); toggle(); });
+  canvas.addEventListener('click', toggle);
+  track.addEventListener('click', function (e) { e.stopPropagation(); var rc = track.getBoundingClientRect(); seekTo((e.clientX - rc.left) / rc.width * DURATION); });
+  loopBtn.addEventListener('click', function (e) { e.stopPropagation(); looping = !looping; loopBtn.setAttribute('aria-pressed', looping ? 'true' : 'false'); });
+  function fullscreen() { if (document.fullscreenElement) document.exitFullscreen(); else if (player.requestFullscreen) player.requestFullscreen(); }
+  document.getElementById('fs').addEventListener('click', function (e) { e.stopPropagation(); fullscreen(); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === ' ' || e.key === 'k') { e.preventDefault(); toggle(); }
+    else if (e.key === 'f') fullscreen();
+    else if (e.key === 'ArrowRight') seekTo(t + 5);
+    else if (e.key === 'ArrowLeft') seekTo(t - 5);
+  });
+
+  window.__render = render; window.__DUR = DURATION; window.__SCENES = SCENES;
+  window.__stop = function () { playing = false; cancelAnimationFrame(raf); };
+  render(0); ui();
+  var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (!reduce) play();
+})();
+</script>
+</body>
+</html>
