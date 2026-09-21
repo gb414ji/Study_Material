@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>THE SUDO LAB - ASCII Video Generator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@500;700&display=swap');
+
+        :root {
+            --bg-color: #070a0e;
+        }
+
+        body {
+            background-color: #030507;
+            font-family: 'Fira Code', monospace;
+            overflow-x: hidden;
+        }
+
+        /* 16:9 Widescreen Container */
+        .video-container {
+            position: relative;
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            background-color: var(--bg-color);
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.9), 0 0 30px rgba(0, 255, 102, 0.08);
+        }
+
+        /* CRT Scanline Overlay */
+        .scanlines {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(
+                rgba(18, 16, 16, 0) 50%, 
+                rgba(0, 0, 0, 0.3) 50%
+            );
+            background-size: 100% 4px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        /* Vignette Effect */
+        .vignette {
+            position: absolute;
+            inset: 0;
+            background: radial-gradient(circle, transparent 65%, rgba(0, 0, 0, 0.85) 100%);
+            z-index: 11;
+            pointer-events: none;
+        }
+
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+            image-rendering: pixelated;
+        }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center min-h-screen p-4 text-gray-200">
+
+    <div class="w-full max-w-5xl flex flex-col space-y-4">
+        <!-- Header Controls -->
+        <div class="flex items-center justify-between px-2">
+            <div class="flex items-center space-x-2">
+                <span class="w-3 h-3 rounded-full bg-red-500 inline-block"></span>
+                <span class="w-3 h-3 rounded-full bg-yellow-500 inline-block"></span>
+                <span class="w-3 h-3 rounded-full bg-green-500 inline-block"></span>
+                <h1 class="ml-2 text-sm font-bold tracking-wider text-gray-400">THE SUDO LAB // ASCII INTRO ENGINE</h1>
+            </div>
+            <span class="text-xs text-gray-500 font-mono">1920x1080 (16:9 Canvas)</span>
+        </div>
+
+        <!-- Main Video Frame -->
+        <div class="video-container rounded-xl overflow-hidden border border-gray-800/80 relative">
+            <div class="scanlines"></div>
+            <div class="vignette"></div>
+            <!-- High-Res Offscreen/Onscreen Canvas for crisp rendering -->
+            <canvas id="asciiCanvas" width="1920" height="1080"></canvas>
+        </div>
+
+        <!-- Action Control Panel -->
+        <div class="bg-gray-900/80 border border-gray-800 rounded-xl p-4 flex flex-col md:flex-row items-center justify-between gap-4 backdrop-blur">
+            <div class="flex items-center space-x-3 w-full md:w-auto">
+                <button id="playBtn" onclick="startAnimation()" class="flex-1 md:flex-none px-5 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs tracking-wider transition flex items-center justify-center space-x-2 shadow-lg shadow-emerald-900/30">
+                    <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+                    <span>PLAY INTRO (5s)</span>
+                </button>
+
+                <button id="recordBtn" onclick="exportVideo()" class="flex-1 md:flex-none px-5 py-2.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-semibold text-xs tracking-wider transition flex items-center justify-center space-x-2 shadow-lg shadow-red-900/30">
+                    <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/></svg>
+                    <span id="recordText">EXPORT VIDEO (.WEBM)</span>
+                </button>
+            </div>
+
+            <!-- Timeline Status -->
+            <div class="flex items-center space-x-4 w-full md:w-auto justify-between md:justify-end">
+                <div class="flex flex-col text-right">
+                    <span id="statusText" class="text-xs font-semibold text-emerald-400">READY</span>
+                    <span id="timecode" class="text-xs font-mono text-gray-400">00:00 / 00:05</span>
+                </div>
+                <div class="w-32 bg-gray-800 h-2 rounded-full overflow-hidden border border-gray-700">
+                    <div id="progressBar" class="bg-gradient-to-r from-emerald-400 to-red-500 h-full w-0"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('asciiCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // ASCII Data for "THE SUDO" (Green) and "LAB" (Red)
+        const greenPart = [
+            "  ████████╗██╗  ██╗███████╗    ███████╗██╗  ██╗██████╗  ██████╗   ",
+            "  ╚══██╔══╝██║  ██║██╔════╝    ██╔════╝██║  ██║██╔══██╗██╔═══██╗  ",
+            "     ██║   ███████║█████╗      ███████╗██║  ██║██║  ██║██║   ██║  ",
+            "     ██║   ██╔══██║██╔══╝      ╚════██║██║  ██║██║  ██║██║   ██║  ",
+            "     ██║   ██║  ██║███████╗    ███████║╚█████╔╝██████╔╝╚██████╔╝  ",
+            "     ╚═╝   ╚═╝  ╚═╝╚══════╝    ╚══════╝ ╚════╝ ╚═════╝  ╚═════╝   "
+        ];
+
+        const redPart = [
+            "██╗      █████╗ ██████╗ ",
+            "██║     ██╔══██╗██╔══██╗",
+            "██║     ███████║██████╔╝",
+            "██║     ██╔══██║██╔══██╗",
+            "███████╗██║  ██║██████╔╝",
+            "╚══════╝╚═╝  ╚═╝╚═════╝ "
+        ];
+
+        const scrambleChars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*#%&=+<>[]/_";
+        let isAnimating = false;
+
+        // Render Frame Function
+        function drawFrame(progress) {
+            ctx.fillStyle = '#070a0e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Configure Text Settings
+            const fontSize = 19;
+            ctx.font = `700 ${fontSize}px "Fira Code", monospace`;
+            ctx.textBaseline = 'top';
+
+            const startY = (canvas.height - (6 * fontSize * 1.25)) / 2;
+
+            for (let r = 0; r < 6; r++) {
+                const gLine = greenPart[r];
+                const rLine = redPart[r];
+
+                const gAnimated = getScrambledLine(gLine, progress, 0.0);
+                const rAnimated = getScrambledLine(rLine, progress, 0.2);
+
+                const totalWidth = ctx.measureText(gLine + rLine).width;
+                let startX = (canvas.width - totalWidth) / 2;
+
+                // Draw Green Segment ("THE SUDO")
+                ctx.fillStyle = '#00ff66';
+                ctx.shadowColor = '#00ff66';
+                ctx.shadowBlur = progress > 0.8 ? 12 : 4;
+                ctx.fillText(gAnimated, startX, startY + (r * fontSize * 1.25));
+
+                startX += ctx.measureText(gLine).width;
+
+                // Draw Red Segment ("LAB")
+                ctx.fillStyle = '#ff2a5f';
+                ctx.shadowColor = '#ff2a5f';
+                ctx.shadowBlur = progress > 0.8 ? 15 : 5;
+                ctx.fillText(rAnimated, startX, startY + (r * fontSize * 1.25));
+            }
+
+            // Draw Subtitle / Tagline
+            if (progress > 0.75) {
+                const alpha = Math.min(1, (progress - 0.75) * 4);
+                ctx.fillStyle = `rgba(0, 229, 255, ${alpha})`;
+                ctx.shadowColor = 'rgba(0, 229, 255, 0.8)';
+                ctx.shadowBlur = 8;
+                ctx.font = '600 22px "Fira Code", monospace';
+                ctx.textAlign = 'center';
+                ctx.fillText("[ SYSTEM ACCESS GRANTED — ALL SYSTEMS ONLINE ]", canvas.width / 2, startY + (6 * fontSize * 1.25) + 60);
+                ctx.textAlign = 'left'; // Reset
+            }
+        }
+
+        // Helper: Generate Character Glitch / Reveal
+        function getScrambledLine(targetText, globalProgress, delay) {
+            let result = "";
+            const len = targetText.length;
+
+            for (let i = 0; i < len; i++) {
+                const ch = targetText[i];
+                if (ch === ' ') {
+                    result += ' ';
+                    continue;
+                }
+
+                const charThreshold = (i / len) * 0.45 + delay;
+
+                if (globalProgress > charThreshold + 0.3) {
+                    result += ch;
+                } else if (globalProgress > charThreshold) {
+                    result += scrambleChars[Math.floor(Math.random() * scrambleChars.length)];
+                } else {
+                    result += ".";
+                }
+            }
+            return result;
+        }
+
+        // Main Animation Control Loop
+        function startAnimation(onComplete) {
+            if (isAnimating) return;
+            isAnimating = true;
+
+            const duration = 5000;
+            const startTime = performance.now();
+
+            document.getElementById('statusText').innerText = "RUNNING INTRO...";
+            document.getElementById('statusText').className = "text-xs font-semibold text-yellow-400";
+
+            function step(currentTime) {
+                const elapsed = currentTime - startTime;
+                const progress = Math.min(1, elapsed / duration);
+
+                // Update UI Controls
+                document.getElementById('progressBar').style.width = `${progress * 100}%`;
+                document.getElementById('timecode').innerText = `00:0${Math.floor(progress * 5)} / 00:05`;
+
+                drawFrame(progress);
+
+                if (progress < 1) {
+                    requestAnimationFrame(step);
+                } else {
+                    isAnimating = false;
+                    document.getElementById('statusText').innerText = "COMPLETE";
+                    document.getElementById('statusText').className = "text-xs font-semibold text-emerald-400";
+                    if (onComplete) onComplete();
+                }
+            }
+
+            requestAnimationFrame(step);
+        }
+
+        // Record and Download as WebM Video
+        function exportVideo() {
+            if (isAnimating) return;
+
+            const recordBtn = document.getElementById('recordBtn');
+            const recordText = document.getElementById('recordText');
+            recordBtn.disabled = true;
+            recordText.innerText = "RECORDING...";
+
+            const stream = canvas.captureStream(60); // 60 FPS Video Stream
+            const mediaRecorder = new MediaRecorder(stream, {
+                mimeType: 'video/webm;codecs=vp9'
+            });
+
+            const chunks = [];
+            mediaRecorder.ondataavailable = e => chunks.push(e.data);
+
+            mediaRecorder.onstop = () => {
+                const blob = new Blob(chunks, { type: 'video/webm' });
+                const url = URL.createObjectURL(blob);
+                
+                // Trigger File Download
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'thesudolab-intro.webm';
+                a.click();
+                URL.revokeObjectURL(url);
+
+                recordBtn.disabled = false;
+                recordText.innerText = "EXPORT VIDEO (.WEBM)";
+            };
+
+            mediaRecorder.start();
+
+            // Run 5-second animation while recording
+            startAnimation(() => {
+                mediaRecorder.stop();
+            });
+        }
+
+        // Initial Draw on Load
+        window.onload = () => {
+            drawFrame(0);
+        };
+    </script>
+</body>
+</html>
