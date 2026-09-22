@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>CISSP SERIES — ASCII Intro</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --yellow:#F7C600;
+    --white:#F3F3EE;
+    --green:#39FF14;
+    --black:#050505;
+  }
+  html,body{
+    margin:0; padding:0; height:100%;
+    background:#000;
+    display:flex; align-items:center; justify-content:center;
+    font-family:'Courier New', ui-monospace, monospace;
+  }
+  .page{
+    display:flex; flex-direction:column; align-items:center;
+    gap:14px; width:100%; height:100%;
+    justify-content:center;
+  }
+  .stage{
+    position:relative;
+    width:min(94vw, 1600px);
+    aspect-ratio:16/9;
+    background:
+      radial-gradient(ellipse at 50% 45%, #101010 0%, #000 70%);
+    overflow:hidden;
+    box-shadow:0 0 0 1px #1a1a1a, 0 30px 80px rgba(0,0,0,.8);
+  }
+
+  /* --- texture layers --- */
+  .scanlines{
+    position:absolute; inset:0; pointer-events:none; z-index:5;
+    background:repeating-linear-gradient(
+      to bottom, rgba(255,255,255,0.035) 0px, rgba(255,255,255,0.035) 1px,
+      transparent 2px, transparent 3px
+    );
+    mix-blend-mode:overlay;
+  }
+  .vignette{
+    position:absolute; inset:0; pointer-events:none; z-index:6;
+    background:radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(0,0,0,.75) 100%);
+  }
+  .grid{
+    position:absolute; inset:0; pointer-events:none; z-index:1;
+    opacity:.18;
+    background-image:
+      linear-gradient(rgba(247,198,0,.5) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(247,198,0,.5) 1px, transparent 1px);
+    background-size:40px 40px;
+    transform:perspective(300px) rotateX(55deg) scale(2.2) translateY(10%);
+    transform-origin:center bottom;
+  }
+  .flash{
+    position:absolute; inset:0; background:#fff; opacity:0;
+    pointer-events:none; z-index:20;
+  }
+
+  /* --- boot terminal text --- */
+  .boot{
+    position:absolute; left:6%; top:10%; z-index:10;
+    margin:0; color:var(--green);
+    font-size:calc(15px * var(--scale, 1));
+    line-height:1.7;
+    text-shadow:0 0 6px rgba(57,255,20,.6);
+    white-space:pre;
+  }
+  .boot .cursor{ opacity:1; animation:blink 0.9s steps(1) infinite; }
+  @keyframes blink{ 50%{ opacity:0; } }
+
+  /* --- ascii art --- */
+  .art-container{
+    position:absolute; inset:0; z-index:10;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:calc(6px * var(--scale,1));
+  }
+  .ascii-block{
+    display:flex; flex-direction:column;
+    filter:
+      drop-shadow(3px 0 0 #000) drop-shadow(-3px 0 0 #000)
+      drop-shadow(0 3px 0 #000) drop-shadow(0 -3px 0 #000)
+      drop-shadow(3px 3px 0 #000) drop-shadow(-3px -3px 0 #000)
+      drop-shadow(3px -3px 0 #000) drop-shadow(-3px 3px 0 #000);
+  }
+  .ascii-block.series{ transform:rotate(-2.5deg); margin-top:2px; }
+  .row{ white-space:pre; font-family:'Courier New', ui-monospace, monospace; }
+  .cissp .row{ font-size:calc(25px * var(--scale,1)); line-height:1.02; color:var(--white); }
+  .series .row{ font-size:calc(25px * var(--scale,1)); line-height:1.02; color:var(--yellow); }
+  .cell{ display:inline-block; transition:color .12s linear; }
+  .cell.dim{ color:#555; }
+  .cell.pop{ animation:pop .18s ease-out; }
+  @keyframes pop{
+    0%{ transform:scale(1.6); text-shadow:0 0 12px #fff; }
+    100%{ transform:scale(1); text-shadow:none; }
+  }
+
+  /* --- star --- */
+  .star-wrap{
+    position:absolute; z-index:11;
+    right:calc(9% - 10px); top:calc(50% + 2%);
+    transform:translateY(-50%) scale(0) rotate(-25deg);
+    opacity:0;
+    transition:transform .5s cubic-bezier(.2,1.4,.4,1), opacity .3s linear;
+  }
+  .star-wrap.show{ transform:translateY(-50%) scale(1) rotate(8deg); opacity:1; }
+  .star{
+    width:calc(46px * var(--scale,1)); height:calc(46px * var(--scale,1));
+    background:#000;
+    clip-path:polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%,
+                       21% 91%, 32% 57%, 2% 35%, 39% 35%);
+    filter:drop-shadow(2px 0 0 #fff) drop-shadow(-2px 0 0 #fff)
+           drop-shadow(0 2px 0 #fff) drop-shadow(0 -2px 0 #fff);
+  }
+
+  /* --- arc text: KNOWLEDGE CAFE --- */
+  .arc-text{
+    position:absolute; z-index:11;
+    right:calc(6% + 20px); top:6%;
+    width:calc(160px * var(--scale,1)); height:calc(160px * var(--scale,1));
+  }
+  .arc-letter{
+    position:absolute; left:50%; top:50%;
+    font-size:calc(13px * var(--scale,1));
+    color:var(--white);
+    font-weight:bold;
+    letter-spacing:1px;
+    opacity:0;
+    transform-origin:center;
+    transition:opacity .25s linear;
+  }
+  .arc-letter.show{ opacity:1; }
+
+  /* --- caption below frame --- */
+  .caption{
+    color:#666; font-size:13px; font-family:'Courier New',monospace;
+    letter-spacing:.5px; text-align:center;
+  }
+  .replay-btn{
+    background:#111; color:var(--yellow); border:1px solid #333;
+    font-family:'Courier New',monospace; font-size:13px;
+    padding:6px 14px; border-radius:4px; cursor:pointer;
+  }
+  .replay-btn:hover{ background:#1c1c1c; border-color:var(--yellow); }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="stage" id="stage">
+      <div class="grid"></div>
+      <div class="scanlines"></div>
+      <pre class="boot" id="boot"></pre>
+      <div class="art-container" id="artContainer">
+        <div class="ascii-block cissp" id="cisspArt"></div>
+        <div class="ascii-block series" id="seriesArt"></div>
+      </div>
+      <div class="star-wrap" id="starWrap"><div class="star"></div></div>
+      <div class="arc-text" id="arcText"></div>
+      <div class="vignette"></div>
+      <div class="flash" id="flash"></div>
+    </div>
+    <div class="caption">16:9 · 1920×1080-ready frame — record or crop the box above · auto-loops</div>
+    <button class="replay-btn" id="replayBtn">↻ Replay intro</button>
+  </div>
+
+<script>
+(function(){
+  var stage = document.getElementById('stage');
+  var bootEl = document.getElementById('boot');
+  var flashEl = document.getElementById('flash');
+  var cisspEl = document.getElementById('cisspArt');
+  var seriesEl = document.getElementById('seriesArt');
+  var starWrap = document.getElementById('starWrap');
+  var arcEl = document.getElementById('arcText');
+
+  function setScale(){
+    var s = stage.clientWidth / 1280;
+    stage.style.setProperty('--scale', s.toFixed(3));
+  }
+  setScale();
+  window.addEventListener('resize', setScale);
+
+  var GLYPH = {
+    C:[" ███ ","█   █","█    ","█    ","█    ","█   █"," ███ "],
+    I:["█████","  █  ","  █  ","  █  ","  █  ","  █  ","█████"],
+    S:[" ████","█    ","█    "," ███ ","    █","    █","████ "],
+    P:["████ ","█   █","█   █","████ ","█    ","█    ","█    "],
+    E:["█████","█    ","█    ","████ ","█    ","█    ","█████"],
+    R:["████ ","█   █","█   █","████ ","█  █ ","█   █","█   █"]
+  };
+
+  function buildRows(word){
+    var letters = word.split('');
+    var rows = [];
+    for(var r=0;r<7;r++){
+      var parts = [];
+      for(var i=0;i<letters.length;i++){ parts.push(GLYPH[letters[i]][r]); }
+      rows.push(parts.join(' '));
+    }
+    return rows;
+  }
+
+  var SCRAMBLE = "░▒▓#%&@*+=-.<>/\\|".split('');
+  function randChar(){ return SCRAMBLE[Math.floor(Math.random()*SCRAMBLE.length)]; }
+
+  var activeTimers = [];
+  function clearTimers(){ activeTimers.forEach(clearInterval); activeTimers.forEach(clearTimeout); activeTimers = []; }
+
+  // renders ascii art into container with a left-to-right scramble/decode reveal
+  function revealArt(container, rows, startDelay, colStep){
+    container.innerHTML = '';
+    var cellRefs = [];
+    rows.forEach(function(rowStr){
+      var rowEl = document.createElement('div');
+      rowEl.className = 'row';
+      for(var c=0; c<rowStr.length; c++){
+        var ch = rowStr[c];
+        var span = document.createElement('span');
+        span.className = 'cell';
+        if(ch === ' '){
+          span.textContent = ' ';
+          span.dataset.final = ' ';
+        } else {
+          span.textContent = randChar();
+          span.classList.add('dim');
+          span.dataset.final = ch;
+          cellRefs.push({el:span, col:c});
+        }
+        rowEl.appendChild(span);
+      }
+      container.appendChild(rowEl);
+    });
+
+    var maxCol = 0;
+    cellRefs.forEach(function(r){ if(r.col>maxCol) maxCol = r.col; });
+
+    cellRefs.forEach(function(ref){
+      var delay = startDelay + ref.col * colStep;
+      var scrambleTimer = setInterval(function(){
+        ref.el.textContent = randChar();
+      }, 45);
+      activeTimers.push(scrambleTimer);
+      var lockTimer = setTimeout(function(){
+        clearInterval(scrambleTimer);
+        ref.el.textContent = ref.el.dataset.final;
+        ref.el.classList.remove('dim');
+        ref.el.classList.add('pop');
+      }, delay + 260);
+      activeTimers.push(lockTimer);
+    });
+
+    return startDelay + maxCol * colStep + 300; // approx finish time
+  }
+
+  function typeBoot(lines, cb){
+    bootEl.textContent = '';
+    var li = 0, ci = 0;
+    function step(){
+      if(li >= lines.length){
+        bootEl.innerHTML += '<span class="cursor">▌</span>';
+        var t = setTimeout(cb, 350);
+        activeTimers.push(t);
+        return;
+      }
+      var line = lines[li];
+      if(ci <= line.length){
+        var soFar = lines.slice(0, li).join('\n');
+        bootEl.textContent = (soFar ? soFar + '\n' : '') + line.slice(0, ci);
+        ci++;
+        var t = setTimeout(step, 22);
+        activeTimers.push(t);
+      } else {
+        li++; ci = 0;
+        var t2 = setTimeout(step, 120);
+        activeTimers.push(t2);
+      }
+    }
+    step();
+  }
+
+  function buildArc(){
+    arcEl.innerHTML = '';
+    var text = "KNOWLEDGE  ★  CAFE";
+    var chars = text.split('');
+    var startAngle = -95, endAngle = 15;
+    var refs = [];
+    chars.forEach(function(ch, i){
+      if(ch === ' ') return;
+      var angle = startAngle + (endAngle-startAngle) * (i/(chars.length-1));
+      var span = document.createElement('span');
+      span.className = 'arc-letter';
+      span.textContent = ch;
+      span.style.transform = 'rotate('+angle+'deg) translate(0, -78px)';
+      arcEl.appendChild(span);
+      refs.push(span);
+    });
+    return refs;
+  }
+
+  function flash(){
+    flashEl.style.transition = 'opacity .08s linear';
+    flashEl.style.opacity = '0.85';
+    setTimeout(function(){
+      flashEl.style.transition = 'opacity .35s ease-out';
+      flashEl.style.opacity = '0';
+    }, 80);
+  }
+
+  function runSequence(){
+    clearTimers();
+    bootEl.textContent = '';
+    cisspEl.innerHTML = '';
+    seriesEl.innerHTML = '';
+    starWrap.classList.remove('show');
+    arcEl.innerHTML = '';
+    flashEl.style.opacity = '0';
+
+    typeBoot([
+      "> establishing secure channel...",
+      "> authenticating credentials...",
+      "> access granted — loading module"
+    ], function(){
+
+      bootEl.style.transition = 'opacity .35s linear';
+      bootEl.style.opacity = '0';
+
+      var t1 = setTimeout(function(){
+        var cisspDone = revealArt(cisspEl, buildRows('CISSP'), 0, 26);
+
+        var t2 = setTimeout(function(){
+          revealArt(seriesEl, buildRows('SERIES'), 0, 22);
+
+          var t3 = setTimeout(function(){
+            starWrap.classList.add('show');
+
+            var t4 = setTimeout(function(){
+              var refs = buildArc();
+              refs.forEach(function(span, i){
+                var t5 = setTimeout(function(){ span.classList.add('show'); }, i * 70);
+                activeTimers.push(t5);
+              });
+              var t6 = setTimeout(flash, refs.length * 70 + 150);
+              activeTimers.push(t6);
+
+              var t7 = setTimeout(runSequence, refs.length * 70 + 3200);
+              activeTimers.push(t7);
+            }, 450);
+            activeTimers.push(t4);
+          }, cisspDone * 0 + 900);
+          activeTimers.push(t3);
+        }, 250);
+        activeTimers.push(t2);
+      }, 150);
+      activeTimers.push(t1);
+    });
+  }
+
+  document.getElementById('replayBtn').addEventListener('click', runSequence);
+  runSequence();
+})();
+</script>
+</body>
+</html>
